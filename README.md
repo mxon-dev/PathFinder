@@ -17,9 +17,12 @@
 | 분류      | 기술                                         |
 | --------- | -------------------------------------------- |
 | Framework | Next.js (App Router)                         |
+| Styling   | **Tailwind CSS** (`src/styles/globals.css`)  |
 | State     | Zustand (Client), TanStack Query v5 (Server) |
 | API / AI  | Axios, Gemini 2.5 API                        |
 | Map       | Kakao Maps API                               |
+
+스타일은 **Tailwind CSS**를 사용합니다. 전역 진입은 `src/styles/globals.css`의 `@import "tailwindcss";`이며, 컴포넌트에서는 유틸리티 클래스로 스타일을 적용합니다.
 
 ## 3. 시스템 아키텍처
 
