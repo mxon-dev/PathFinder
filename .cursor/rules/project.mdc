@@ -88,3 +88,7 @@ The application follows a Layered Architecture pattern for maintainability and s
 - **LLM Call (Gemini 2.5):** Generates text guides and summary info based on walking route data via prompt engineering
 - **Kakao Maps API:** Renders walking route polylines on the map using collected coordinates and handles user interactions
 - **Public Data (Walking Route API):** Collects, filters, and parses nearby walking route base data
+
+## 8. Related Skills
+
+- When implementing the AI Docent feature with Gemini, use `.cursor/skills/gemini-docent/SKILL.md`.
