@@ -39,6 +39,11 @@ next-env.d.ts
 *.swp
 *.swo
 
+# AI adapter junction contents
+.cursor/skills/**
+.claude/rules/**
+.claude/skills/**
+
 # OS files
 .DS_Store
 Thumbs.db

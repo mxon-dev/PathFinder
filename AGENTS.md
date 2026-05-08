@@ -9,15 +9,26 @@ Tech stack: Next.js 15 (App Router), TypeScript, Kakao Maps JavaScript API, Publ
 
 ---
 
+## Shared AI Instructions
+
+Project-wide AI instructions live in `.ai/`.
+Treat `.ai/rules` and `.ai/skills` as the source of truth.
+Tool-specific folders, such as `.cursor/`, should expose those shared files through links instead of keeping separate copies.
+
+When adding a new shared rule or skill, follow `.ai/README.md`.
+
+---
+
 ## Skill Files
 
 This project has **AI Agent Skill** files organized by work area.
-Before starting any work in a related area, you must read the corresponding skill file first.
-You must follow all rules, implementation patterns, and prohibited actions specified in the skill.
+Before starting any work in a related area, read the corresponding top-level skill file first.
+Each top-level skill file contains the common rules and a task routing table for focused detail documents.
+You must follow all rules, implementation patterns, and prohibited actions specified in the relevant skill documents.
 
 ### kakao-api
 
-**File**: `docs/ai-skills/kakao-api.md`
+**File**: `.ai/skills/kakao-api/SKILL.md`
 
 **Applicable areas**:
 - `src/lib/kakao/**`
@@ -34,7 +45,7 @@ You must follow all rules, implementation patterns, and prohibited actions speci
 
 ### public-data-api
 
-**File**: `docs/ai-skills/public-data-api.md`
+**File**: `.ai/skills/public-data-api/SKILL.md`
 
 **Applicable areas**:
 - `src/lib/public-data/**`
@@ -53,13 +64,13 @@ You must follow all rules, implementation patterns, and prohibited actions speci
 
 ## Task Decision Guide
 
-| Task | Skill to Read |
-|---|---|
-| Map display, markers, route Polyline | kakao-api |
-| Place search API calls | kakao-api |
-| Kakao Map URL generation | kakao-api |
-| Collecting and normalizing recommendation candidates | public-data-api |
-| Static JSON-based recommendation filtering | public-data-api |
-| Supplementing candidates with Kakao Local when candidates are insufficient | kakao-api + public-data-api |
+| Task | Top-Level Skill | Focused Detail Docs |
+|---|---|---|
+| Map display, markers, route Polyline | `kakao-api` | `.ai/skills/kakao-api/references/maps-sdk.md` |
+| Place search API calls | `kakao-api` | `.ai/skills/kakao-api/references/local-client.md`, `.ai/skills/kakao-api/references/route-handlers.md` |
+| Kakao Map URL generation | `kakao-api` | `.ai/skills/kakao-api/references/map-urls.md` |
+| Collecting and normalizing recommendation candidates | `public-data-api` | `.ai/skills/public-data-api/references/client-pagination.md`, then the relevant `.ai/skills/public-data-api/references/datasets-*.md` file |
+| Static JSON-based recommendation filtering | `public-data-api` | `.ai/skills/public-data-api/references/recommendation-logic.md` |
+| Supplementing candidates with Kakao Local when candidates are insufficient | `kakao-api` + `public-data-api` | `.ai/skills/kakao-api/references/recommendation-search.md`, `.ai/skills/public-data-api/references/recommendation-logic.md` |
 
-If a task spans both areas, read both skills.
+If a task spans both areas, read both top-level skills first, then the focused detail docs listed in their routing tables.
