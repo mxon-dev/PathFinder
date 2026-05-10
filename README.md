@@ -24,6 +24,8 @@
 
 스타일은 **Tailwind CSS**를 사용합니다. 전역 진입은 `src/styles/globals.css`의 `@import "tailwindcss";`이며, 컴포넌트에서는 유틸리티 클래스로 스타일을 적용합니다.
 
+**Gemini:** API 키는 **반드시 `.env.local`**에 넣어야 합니다. (`.env.example`만 수정하면 Next가 키를 읽지 않습니다.) `GEMINI_API_KEY` 또는 Google 샘플과 동일한 `GOOGLE_API_KEY`를 사용할 수 있습니다. 변경 후 `pnpm dev`를 다시 시작하세요. 모델 오류 시 `.env.example` 주석대로 `GEMINI_MODEL`을 `gemini-2.0-flash` 등으로 바꿔 보세요. 클라이언트는 `/api/ai-docent`만 호출합니다.
+
 ## 3. 시스템 아키텍처
 
 본 프로젝트는 **Layered Architecture**를 기반으로 각 레이어의 책임을 명확히 분리합니다.
