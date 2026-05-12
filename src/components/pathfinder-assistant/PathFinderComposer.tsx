@@ -13,7 +13,9 @@ type PathFinderComposerProps = {
   placeIds: PlaceId[];
   onClearDuration: () => void;
   onRemovePlace: (id: PlaceId) => void;
-  onSend?: (text: string) => void;
+  onSend?: (text: string) => void | Promise<void>;
+  /** Gemini 응답 대기 중 입력·전송 비활성화 */
+  isSending?: boolean;
   placeholder?: string;
 };
 
@@ -26,15 +28,16 @@ export function PathFinderComposer({
   onClearDuration,
   onRemovePlace,
   onSend,
+  isSending = false,
   placeholder = "원하는 코스를 자유롭게 입력하세요",
 }: PathFinderComposerProps) {
-  const canSend = composedMessage.trim().length > 0;
+  const canSend = composedMessage.trim().length > 0 && !isSending;
   const hasEmbedded = durationId !== null || placeIds.length > 0;
 
   const submit = () => {
     const t = composedMessage.trim();
-    if (!t) return;
-    onSend?.(t);
+    if (!t || isSending) return;
+    void onSend?.(t);
   };
 
   return (
@@ -50,7 +53,8 @@ export function PathFinderComposer({
                 <button
                   type="button"
                   onClick={onClearDuration}
-                  className="absolute right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-300/90 hover:text-neutral-900"
+                  disabled={isSending}
+                  className="absolute right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-300/90 hover:text-neutral-900 disabled:pointer-events-none disabled:opacity-40"
                   aria-label="소요 시간 선택 해제"
                 >
                   <IconChipDismiss />
@@ -70,7 +74,8 @@ export function PathFinderComposer({
                   <button
                     type="button"
                     onClick={() => onRemovePlace(pid)}
-                    className="absolute right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-300/90 hover:text-neutral-900"
+                    disabled={isSending}
+                    className="absolute right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-300/90 hover:text-neutral-900 disabled:pointer-events-none disabled:opacity-40"
                     aria-label={`${p.label} 선택 해제`}
                   >
                     <IconChipDismiss />
@@ -96,8 +101,9 @@ export function PathFinderComposer({
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
             }}
+            disabled={isSending}
             placeholder={placeholder}
-            className="min-h-11 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3.5 text-sm text-neutral-900 shadow-sm outline-none placeholder:text-neutral-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            className="min-h-11 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-white px-3.5 text-sm text-neutral-900 shadow-sm outline-none placeholder:text-neutral-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500"
             aria-label={placeholder}
           />
           <button
