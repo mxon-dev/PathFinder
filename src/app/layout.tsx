@@ -14,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body className="min-h-dvh antialiased">
+      <body className="min-h-dvh antialiased" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>
