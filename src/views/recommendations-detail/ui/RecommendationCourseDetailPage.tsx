@@ -138,12 +138,12 @@ function StatCard({
   value: string;
 }) {
   return (
-    <div className="flex min-h-24 flex-col items-center justify-center rounded-2xl bg-slate-100 px-3 text-center">
+    <div className="flex min-h-20 flex-col items-center justify-center rounded-lg bg-slate-100 px-3 text-center">
       <span className="text-slate-700">{icon}</span>
-      <strong className="mt-2 text-2xl font-extrabold leading-none text-slate-950">
+      <strong className="mt-2 text-xl font-extrabold leading-none text-slate-950">
         {value}
       </strong>
-      <span className="mt-2 text-sm font-bold text-slate-300">{label}</span>
+      <span className="mt-1.5 text-xs font-bold text-slate-300">{label}</span>
     </div>
   );
 }
@@ -170,15 +170,12 @@ export function RecommendationCourseDetailPage({
 
         <div className="relative min-h-0 flex-1 overflow-hidden bg-slate-100">
           <CourseDetailMap course={course} />
-          <section className="absolute inset-x-0 bottom-0 max-h-[46%] overflow-y-auto rounded-t-[2rem] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-8 shadow-[0_-10px_30px_rgba(15,23,42,0.08)]">
+          <section className="absolute inset-x-0 bottom-0 z-10 max-h-[56%] overflow-y-auto overscroll-contain rounded-t-[2rem] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-8 shadow-[0_-10px_30px_rgba(15,23,42,0.08)]">
             <div className="absolute left-1/2 top-3 h-1 w-12 -translate-x-1/2 rounded-full bg-slate-200" />
             <h2 className="text-2xl font-extrabold leading-tight text-slate-950">
               {course.title}
             </h2>
-            <p className="mt-3 text-base font-medium leading-7 text-slate-500">
-              {course.description}
-            </p>
-            <dl className="mt-6 grid grid-cols-2 gap-3">
+            <dl className="mt-4 grid grid-cols-2 gap-3">
               <StatCard
                 icon={<IconClock className="h-5 w-5" />}
                 label="소요시간"
@@ -190,6 +187,9 @@ export function RecommendationCourseDetailPage({
                 value={formatDistance(course.distanceKm)}
               />
             </dl>
+            <p className="mt-4 text-base font-medium leading-7 text-slate-500">
+              {course.description}
+            </p>
           </section>
         </div>
       </section>
