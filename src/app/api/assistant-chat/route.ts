@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { Content } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import type {
+  AssistantChatLocationContext,
   AssistantChatMessageDTO,
   AssistantChatResponse,
 } from "@/features/assistant-chat/model/types";
@@ -50,6 +51,64 @@ function parseMessages(body: unknown): AssistantChatMessageDTO[] | null {
   return out;
 }
 
+function parseLocation(body: unknown): AssistantChatLocationContext | undefined | null {
+  if (!body || typeof body !== "object") return undefined;
+  const raw = (body as Record<string, unknown>).location;
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== "object") return null;
+
+  const rec = raw as Record<string, unknown>;
+  const mode = rec.mode;
+  const lat = rec.lat;
+  const lng = rec.lng;
+
+  if (mode !== "current" && mode !== "selected") return null;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const location: AssistantChatLocationContext = {
+    mode,
+    lat,
+    lng,
+  };
+
+  if (typeof rec.name === "string" && rec.name.trim()) {
+    location.name = rec.name.trim().slice(0, 120);
+  }
+  if (typeof rec.address === "string" && rec.address.trim()) {
+    location.address = rec.address.trim().slice(0, 200);
+  }
+  if (typeof rec.placeUrl === "string" && rec.placeUrl.trim()) {
+    location.placeUrl = rec.placeUrl.trim().slice(0, 300);
+  }
+
+  return location;
+}
+
+function buildLocationPrompt(location?: AssistantChatLocationContext) {
+  if (!location) return "";
+  const label =
+    location.name ??
+    location.address ??
+    (location.mode === "current" ? "사용자의 현재 위치" : "사용자가 선택한 위치");
+  const address = location.address ? `주소: ${location.address}` : "";
+  const source =
+    location.mode === "current"
+      ? "브라우저 현재 위치 기반"
+      : "사용자가 카카오 장소 검색으로 선택한 위치";
+
+  return [
+    "[위치 컨텍스트]",
+    `추천 기준: ${label}`,
+    `출처: ${source}`,
+    address,
+    `좌표: lat=${location.lat}, lng=${location.lng}`,
+    "이 위치를 산책 코스 추천의 기준점으로 삼되, 정확한 경로 좌표를 임의로 만들지 마세요.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export async function POST(req: Request) {
   const apiKey = (
     process.env.GEMINI_API_KEY ??
@@ -86,6 +145,14 @@ export async function POST(req: Request) {
     );
   }
 
+  const location = parseLocation(json);
+  if (location === null) {
+    return NextResponse.json(
+      { error: "Invalid request: location must include mode, lat, and lng." },
+      { status: 400 },
+    );
+  }
+
   const genAI = new GoogleGenerativeAI(apiKey);
   const primaryModel = modelName;
   const fallbackModel = (
@@ -96,6 +163,15 @@ export async function POST(req: Request) {
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
   }));
+  const locationPrompt = buildLocationPrompt(location);
+  if (locationPrompt) {
+    const last = contents[contents.length - 1];
+    const userText = messages[messages.length - 1].content;
+    contents[contents.length - 1] = {
+      ...last,
+      parts: [{ text: `${locationPrompt}\n\n[사용자 요청]\n${userText}` }],
+    };
+  }
 
   const maxAttemptsPerModel = 3;
   const modelsToTry =
