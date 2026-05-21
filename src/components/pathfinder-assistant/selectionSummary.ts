@@ -17,7 +17,8 @@ export function buildSelectionSummary(
 ): string | null {
   if (!duration && places.length === 0) return null;
   const parts: string[] = [];
-  if (duration) parts.push(`${durationLabel(duration)} 산책`);
+  /* "산책"은 공공데이터 의도 정규식에서 길(trail)로 오인되므로 여기서는 넣지 않음 */
+  if (duration) parts.push(durationLabel(duration));
   if (places.length) parts.push(places.map(placeSegment).join(" · "));
   return `${parts.join(" · ")} 코스`;
 }

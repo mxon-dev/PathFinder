@@ -73,6 +73,8 @@ export function PathFinderAssistantScreen({
       text: t,
     };
     const thread = [...chatLines, userLine];
+    const placesSnapshot = [...places];
+    const durationSnapshot = duration;
     setChatLines(thread);
     setDuration(null);
     setPlaces([]);
@@ -81,6 +83,12 @@ export function PathFinderAssistantScreen({
     try {
       const data = await chatMutation.mutateAsync({
         messages: thread.map((m) => ({ role: m.role, content: m.text })),
+        ...(placesSnapshot.length > 0
+          ? { selectionPlaces: placesSnapshot }
+          : {}),
+        ...(durationSnapshot
+          ? { selectionDuration: durationSnapshot }
+          : {}),
       });
       const replyRaw = typeof data?.reply === "string" ? data.reply.trim() : "";
       const replyText =

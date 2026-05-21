@@ -12,7 +12,7 @@ export function PathFinderLocationRow({ onPress }: PathFinderLocationRowProps) {
     <>
       <span className="flex items-center gap-2 text-sm font-medium text-neutral-800">
         <span className="inline-block h-2 w-2 rounded-full bg-blue-500" aria-hidden />
-        현재 위치 기반 추천
+        데모 위치 기준 (서울 시청 인근)
       </span>
       <IconChevronDown className="shrink-0 text-neutral-400" />
     </>
