@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssistantChatLocationContext } from "@/features/assistant-chat/model/types";
+import LocationAPI from "@/features/location/api/LocationAPI";
 import {
   type DurationId,
   PathFinderDurationChips,
@@ -24,12 +25,49 @@ import { buildComposedMessage } from "./selectionSummary";
 const BOT_GREETING =
   "안녕하세요! 오늘 어떤 산책을 즐기고 싶으신가요? 시간이나 장소를 선택하거나, 자유롭게 말씀해 주세요 😊";
 
+const LOCATION_REQUIRED_MESSAGE =
+  "현재 위치 기반으로 코스를 추천하려면 위치 권한이 필요해요. 브라우저에서 위치 권한을 허용하거나, 위치 선택에서 장소를 직접 골라 주세요.";
+
+const COURSE_REQUEST_PATTERN =
+  /추천|코스|산책|걷|걸|도보|경로|둘레길|공원|강|호수|산|도심|카페|문화|관광/;
+
 type ChatLine = {
   id: number;
   role: "user" | "assistant";
   text: string;
   includeInRequest?: boolean;
 };
+
+function shouldUseLocationContext(
+  text: string,
+  duration: DurationId | null,
+  places: PlaceId[],
+) {
+  return (
+    duration !== null || places.length > 0 || COURSE_REQUEST_PATTERN.test(text)
+  );
+}
+
+function getBrowserPosition() {
+  return new Promise<GeolocationPosition>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation is not supported."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 12000,
+      maximumAge: 1000 * 60 * 3,
+    });
+  });
+}
+
+async function getRegionName(lat: number, lng: number) {
+  const { data } = await LocationAPI.coordToRegion({ lat, lng });
+  const region = data.adminRegion ?? data.legalRegion;
+  return region?.address_name;
+}
 
 function buildRecommendationHref(params: {
   duration: DurationId | null;
@@ -75,10 +113,11 @@ export function PathFinderAssistantScreen({
   const [selectedLocation, setSelectedLocation] =
     useState<AssistantChatLocationContext | null>(null);
   const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
+  const [isResolvingLocation, setIsResolvingLocation] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const messageIdRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const isSubmitting = isNavigating;
+  const isSubmitting = isResolvingLocation || isNavigating;
 
   const composedMessage = useMemo(
     () => buildComposedMessage(duration, places, composerText),
@@ -97,12 +136,60 @@ export function PathFinderAssistantScreen({
     );
   };
 
+  const appendAssistantNotice = (text: string) => {
+    messageIdRef.current += 1;
+    setChatLines((prev) => [
+      ...prev,
+      {
+        id: messageIdRef.current,
+        role: "assistant",
+        text,
+        includeInRequest: false,
+      },
+    ]);
+  };
+
+  const resolveCurrentLocation = async () => {
+    const position = await getBrowserPosition();
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+
+    let regionName: string | undefined;
+    try {
+      regionName = await getRegionName(lat, lng);
+    } catch {
+      regionName = undefined;
+    }
+
+    const location: AssistantChatLocationContext = {
+      mode: "current",
+      name: regionName ?? "현재 위치",
+      address: regionName,
+      lat,
+      lng,
+    };
+
+    return location;
+  };
+
   const handleSend = async (text: string) => {
     const t = text.trim();
     if (!t || isSubmitting) return;
 
-    const locationContext: AssistantChatLocationContext | undefined =
+    let locationContext: AssistantChatLocationContext | undefined =
       selectedLocation ?? undefined;
+
+    if (!locationContext && shouldUseLocationContext(t, duration, places)) {
+      try {
+        setIsResolvingLocation(true);
+        locationContext = await resolveCurrentLocation();
+      } catch {
+        appendAssistantNotice(LOCATION_REQUIRED_MESSAGE);
+        return;
+      } finally {
+        setIsResolvingLocation(false);
+      }
+    }
 
     setIsNavigating(true);
     router.push(
@@ -120,7 +207,9 @@ export function PathFinderAssistantScreen({
     : "현재 위치 기반 추천";
   const locationDetail = selectedLocation?.address
     ? selectedLocation.address
-    : undefined;
+    : isResolvingLocation
+      ? "현재 위치 확인 중..."
+      : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
@@ -153,7 +242,7 @@ export function PathFinderAssistantScreen({
               aria-live="polite"
             >
               <IconTypingSpinner className="h-4 w-4 shrink-0 text-blue-500" />
-              추천 코스로 이동 중…
+              {isResolvingLocation ? "현재 위치 확인 중..." : "추천 코스로 이동 중…"}
             </span>
           </PathFinderBotMessage>
         ) : null}
