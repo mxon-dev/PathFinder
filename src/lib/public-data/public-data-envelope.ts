@@ -17,5 +17,6 @@ export function toItemArray<T>(value: T | T[] | undefined): T[] {
 
 export function isPublicDataOk(code: string | undefined): boolean {
   if (!code) return true;
-  return code === "00" || code === "0000";
+  const normalized = code.trim();
+  return normalized === "00" || normalized === "0000";
 }

@@ -9,7 +9,6 @@ import type {
   AssistantPlaceSelection,
 } from "@/features/assistant-chat/model/types";
 import { buildPublicDataAugmentationBlock } from "@/lib/public-data/build-public-data-augmentation";
-import { buildWalkCoursesAugmentationBlock } from "@/lib/walk-courses/build-walk-courses-augmentation";
 
 export const runtime = "nodejs";
 
@@ -25,7 +24,7 @@ const SYSTEM_INSTRUCTION = [
 ].join(" ");
 
 const AUGMENTED_INSTRUCTION = [
-  "아래 [산책 코스 데이터] 또는 [공공데이터 참고 텍스트] 블록이 함께 주어집니다.",
+  "아래 [공공데이터] 블록이 함께 주어집니다.",
   "사용자의 산책 요청에 답할 때는 반드시 그 목록에 있는 항목(이름·주소·거리 등)을 2~4개 골라 근거로 인용하세요.",
   "목록에 없는 새 장소를 지어내지 마세요. 거리·위치는 목록의 값만 사용하고, 추정·과장을 피하세요.",
   "‘지도 앱에서 검색해 보세요’ 같은 일반 안내로 끝내지 말고, 목록 항목 이름을 명시적으로 제시하세요.",
@@ -218,22 +217,11 @@ export async function POST(req: Request) {
       }
     : undefined;
 
-  const [walkCoursesAugmentation, publicAugmentation] = await Promise.all([
-    buildWalkCoursesAugmentationBlock({
-      selectionPlaces,
-      selectionDuration,
-      referencePoint,
-    }),
-    process.env.PUBLIC_DATA_SERVICE_KEY?.trim()
-      ? buildPublicDataAugmentationBlock(lastUserText, selectionPlaces)
-      : Promise.resolve(""),
-  ]);
+  const publicAugmentation = process.env.PUBLIC_DATA_SERVICE_KEY?.trim()
+    ? await buildPublicDataAugmentationBlock(lastUserText, selectionPlaces)
+    : "";
 
-  const augmentationParts = [
-    walkCoursesAugmentation,
-    publicAugmentation,
-  ].filter((p) => p && p.trim().length > 0);
-  const combinedAugmentation = augmentationParts.join("\n\n");
+  const combinedAugmentation = publicAugmentation.trim();
 
   if (process.env.NODE_ENV !== "production") {
     console.log(

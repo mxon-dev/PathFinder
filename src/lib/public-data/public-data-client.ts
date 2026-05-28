@@ -1,4 +1,5 @@
 import type { StandardListEnvelope } from "./public-data-envelope";
+import { formatPublicDataError } from "./public-data-errors";
 import { isPublicDataOk } from "./public-data-envelope";
 
 type RequestOpts = {
@@ -81,6 +82,6 @@ export async function assertPublicDataHeader<T>(
   const code = data.response?.header?.resultCode;
   const msg = data.response?.header?.resultMsg ?? "";
   if (!isPublicDataOk(code)) {
-    throw new Error(`Public Data API error: ${code ?? "?"} ${msg}`);
+    throw new Error(formatPublicDataError(code, msg));
   }
 }

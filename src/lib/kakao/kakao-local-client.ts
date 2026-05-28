@@ -88,3 +88,18 @@ export async function searchKeyword(params: {
     sort: params.sort ?? "accuracy",
   });
 }
+
+export async function searchAddress(params: {
+  query: string;
+  page?: number;
+  size?: number;
+}) {
+  return requestKakaoLocal<{ x: string; y: string; address_name?: string }>(
+    "/search/address.json",
+    {
+      query: params.query,
+      page: params.page ?? 1,
+      size: params.size ?? 1,
+    },
+  );
+}

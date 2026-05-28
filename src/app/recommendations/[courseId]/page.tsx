@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { findMockRecommendedCourse } from "@/features/walk/model/mock-courses";
 import { RecommendationCourseDetailPage } from "@/views/recommendations-detail/ui/RecommendationCourseDetailPage";
+import { findRecommendedCourseById } from "@/lib/walk/build-walk-recommendations";
 
 type PageProps = {
   params: Promise<{
@@ -8,6 +8,12 @@ type PageProps = {
   }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
+
+function parseNumber(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
 
 function buildBackHref(searchParams: Record<string, string | string[] | undefined>) {
   const query = new URLSearchParams();
@@ -17,6 +23,18 @@ function buildBackHref(searchParams: Record<string, string | string[] | undefine
   }
   if (typeof searchParams.places === "string") {
     query.set("places", searchParams.places);
+  }
+  if (typeof searchParams.lat === "string") {
+    query.set("lat", searchParams.lat);
+  }
+  if (typeof searchParams.lng === "string") {
+    query.set("lng", searchParams.lng);
+  }
+  if (typeof searchParams.locationName === "string") {
+    query.set("locationName", searchParams.locationName);
+  }
+  if (typeof searchParams.freeText === "string") {
+    query.set("freeText", searchParams.freeText);
   }
 
   const suffix = query.toString();
@@ -28,7 +46,35 @@ export default async function Page({ params, searchParams }: PageProps) {
     params,
     searchParams,
   ]);
-  const course = findMockRecommendedCourse(courseId);
+
+  const course = await findRecommendedCourseById(courseId, {
+    duration:
+      typeof resolvedSearchParams.duration === "string"
+        ? resolvedSearchParams.duration
+        : undefined,
+    places:
+      typeof resolvedSearchParams.places === "string"
+        ? resolvedSearchParams.places
+        : undefined,
+    lat: parseNumber(
+      typeof resolvedSearchParams.lat === "string"
+        ? resolvedSearchParams.lat
+        : undefined,
+    ),
+    lng: parseNumber(
+      typeof resolvedSearchParams.lng === "string"
+        ? resolvedSearchParams.lng
+        : undefined,
+    ),
+    locationName:
+      typeof resolvedSearchParams.locationName === "string"
+        ? resolvedSearchParams.locationName
+        : undefined,
+    freeText:
+      typeof resolvedSearchParams.freeText === "string"
+        ? resolvedSearchParams.freeText
+        : undefined,
+  });
 
   if (!course) {
     notFound();

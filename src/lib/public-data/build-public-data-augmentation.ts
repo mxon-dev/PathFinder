@@ -1,6 +1,7 @@
 import { DUMMY_REFERENCE_POINT } from "@/shared/config/dummy-location";
 import type { AssistantPlaceSelection } from "@/features/assistant-chat/model/types";
 import { haversineKm } from "./distance";
+import { fetchNearbyTrailCandidates } from "./fetch-nearby-trail-candidates";
 import {
   assertPublicDataHeader,
   requestPublicDataJson,
@@ -9,6 +10,12 @@ import {
   type StandardListEnvelope,
   toItemArray,
 } from "./public-data-envelope";
+import { normalizeTourismTrail } from "./normalizers/normalize-trails";
+import {
+  DEFAULT_TRAIL_ENDPOINT,
+  fetchTourismTrailRecords,
+  matchesTrailPlaces,
+} from "./trail-candidate-mapper";
 import { resolvePublicDataIntent } from "./resolve-public-data-intent";
 
 type RawRecord = Record<string, unknown>;
@@ -45,19 +52,6 @@ function parkLng(it: RawRecord) {
   );
 }
 
-function trailTitle(it: RawRecord): string {
-  return String(
-    it["길명"] ?? it["pathNm"] ?? it["routeNm"] ?? it["trailNm"] ?? "",
-  ).trim();
-}
-
-function trailDescription(it: RawRecord): string {
-  const d = String(
-    it["길소개"] ?? it["pathIntrcn"] ?? it["description"] ?? "",
-  ).trim();
-  return d.slice(0, 160);
-}
-
 function formatParamKey(): "type" | "_type" {
   return process.env.PUBLIC_DATA_RESPONSE_FORMAT_PARAM === "_type"
     ? "_type"
@@ -84,7 +78,6 @@ function rowHintsRiver(title: string, addr: string): boolean {
 
 async function buildUrbanParkAugmentationLines(options: {
   selectionPlaces?: AssistantPlaceSelection[];
-  /** 길 API 없을 때 폴백 등 추가 안내 줄 */
   preamble?: string[];
 }): Promise<string[]> {
   const endpoint =
@@ -133,7 +126,6 @@ async function buildUrbanParkAugmentationLines(options: {
   }
 
   const pickNear = near.slice(0, 12);
-
   const fallback = enriched.filter((x) => x.title).slice(0, 8);
 
   const lines =
@@ -154,6 +146,56 @@ async function buildUrbanParkAugmentationLines(options: {
     ...(options.preamble ?? []),
     headerCore,
     `기준점(더미): ${DUMMY_REFERENCE_POINT.label} (${DUMMY_REFERENCE_POINT.lat.toFixed(5)}, ${DUMMY_REFERENCE_POINT.lng.toFixed(5)})`,
+    ...lines,
+  ];
+}
+
+async function buildTourismTrailAugmentationLines(options: {
+  selectionPlaces?: AssistantPlaceSelection[];
+}): Promise<string[]> {
+  const rawItems = await fetchTourismTrailRecords();
+  const normalized = rawItems
+    .map((row) => normalizeTourismTrail(row))
+    .filter((trail): trail is NonNullable<typeof trail> => trail != null)
+    .filter((trail) => matchesTrailPlaces(trail, options.selectionPlaces ?? []));
+
+  const nearby = await fetchNearbyTrailCandidates({
+    reference: DUMMY_REFERENCE_POINT,
+    selectionPlaces: options.selectionPlaces,
+    limit: 12,
+  });
+
+  const lines =
+    nearby.length > 0
+      ? nearby.map((trail, i) => {
+          const bits = [
+            trail.distanceKm != null ? `${trail.distanceKm}km` : null,
+            trail.durationMin != null ? `약 ${trail.durationMin}분` : null,
+            trail.start?.name ? `시작 ${trail.start.name}` : null,
+            trail.end?.name ? `종료 ${trail.end.name}` : null,
+          ].filter(Boolean);
+          return `${i + 1}. ${trail.title}${bits.length ? ` — ${bits.join(", ")}` : ""}`;
+        })
+      : normalized.slice(0, 12).map((trail, i) => {
+          const bits = [
+            trail.distanceKm != null ? `${trail.distanceKm}km` : null,
+            trail.durationMin != null ? `${trail.durationMin}분` : null,
+            trail.start?.name ? `시작 ${trail.start.name}` : null,
+            trail.start?.address ? trail.start.address : null,
+          ].filter(Boolean);
+          return `${i + 1}. ${trail.title}${bits.length ? ` — ${bits.join(", ")}` : ""}`;
+        });
+
+  const endpoint =
+    process.env.PUBLIC_DATA_TRAIL_ENDPOINT?.trim() ?? DEFAULT_TRAIL_ENDPOINT;
+
+  return [
+    "[공공데이터 — 전국길관광정보표준데이터, 출처 원문이라 단정·과장 금지]",
+    `길·산책로 openapi (${endpoint}) 조회 ${rawItems.length}건, 장소 칩 필터 후 ${normalized.length}건.`,
+    nearby.length
+      ? `기준점 ${DUMMY_REFERENCE_POINT.label} 반경 ${radiusKm()}km 내 좌표 보강 후 ${nearby.length}건.`
+      : "좌표 보강 실패 시 텍스트 정보만 참고.",
+    `기준점: ${DUMMY_REFERENCE_POINT.label} (${DUMMY_REFERENCE_POINT.lat.toFixed(5)}, ${DUMMY_REFERENCE_POINT.lng.toFixed(5)})`,
     ...lines,
   ];
 }
@@ -183,11 +225,20 @@ export async function buildPublicDataAugmentationBlock(
       return lines.join("\n");
     }
 
-    const trailEndpoint = process.env.PUBLIC_DATA_TRAIL_ENDPOINT?.trim();
-    if (!trailEndpoint) {
+    try {
+      const lines = await buildTourismTrailAugmentationLines({
+        selectionPlaces,
+      });
+      return lines.join("\n");
+    } catch (trailError) {
+      const msg =
+        trailError instanceof Error
+          ? trailError.message.slice(0, 200)
+          : String(trailError);
       const preamble = [
-        "[안내] 사용자 의도는 길·산책로·강변 등인데 PUBLIC_DATA_TRAIL_ENDPOINT가 비어 있어, 같은 서비스키로 도시공원 목록을 참고 자료로 대체했습니다.",
-        "목록 속 공원명·주소만 근거로 답하고, 실제 강변 산책로 존재 여부는 단정하지 마세요.",
+        `[안내] 전국길관광 openapi 호출 실패(${msg}).`,
+        "포털에서 '전국길관광정보표준데이터' openapi 활용신청 및 PUBLIC_DATA_TRAIL_ENDPOINT 확인 필요.",
+        "아래는 도시공원 목록으로 대체한 참고 자료입니다.",
       ];
       const lines = await buildUrbanParkAugmentationLines({
         selectionPlaces,
@@ -195,51 +246,6 @@ export async function buildPublicDataAugmentationBlock(
       });
       return lines.join("\n");
     }
-
-    const data = await requestPublicDataJson<
-      StandardListEnvelope<RawRecord>
-    >({
-      endpoint: trailEndpoint,
-      pageNo: 1,
-      numOfRows: Math.min(pageSize(), 80),
-      formatParamKey: formatParamKey(),
-    });
-
-    await assertPublicDataHeader(data);
-    const rawItems = toItemArray(data.response?.body?.items?.item);
-
-    const rows = rawItems
-      .map((it) => {
-        const title = trailTitle(it);
-        if (!title) return null;
-        const intro = trailDescription(it);
-        const len = String(it["총길이"] ?? it["totalLength"] ?? "").trim();
-        const time = String(it["총소요시간"] ?? it["reqreTime"] ?? "").trim();
-        const start = String(
-          it["시작지점명"] ?? it["startPointNm"] ?? "",
-        ).trim();
-        const agency = String(it["관리기관명"] ?? it["institutionNm"] ?? "").trim();
-        return { title, intro, len, time, start, agency };
-      })
-      .filter((x): x is NonNullable<typeof x> => x != null)
-      .slice(0, 12);
-
-    const lines = rows.map((x, i) => {
-      const bits = [
-        x.len ? `길이 ${x.len}` : null,
-        x.time ? `소요 ${x.time}` : null,
-        x.start ? `시작 ${x.start}` : null,
-        x.agency ? x.agency : null,
-      ].filter(Boolean);
-      return `${i + 1}. ${x.title}${x.intro ? ` — ${x.intro}` : ""}${bits.length ? ` (${bits.join(", ")})` : ""}`;
-    });
-
-    return [
-      "[공공데이터 참고 텍스트 — 원문과 다를 수 있으니 과장·단정 금지]",
-      `길·산책로류 오픈API 조회 결과 일부 (${rows.length}건).`,
-      `기준 위치는 더미 좌표만 사용 중 (${DUMMY_REFERENCE_POINT.label}).`,
-      ...lines,
-    ].join("\n");
   } catch (e) {
     const msg = e instanceof Error ? e.message.slice(0, 400) : String(e);
     return [

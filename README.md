@@ -26,7 +26,7 @@
 
 **Gemini:** API 키는 **반드시 `.env.local`**에 넣어야 합니다. (`.env.example`만 수정하면 Next가 키를 읽지 않습니다.) `GEMINI_API_KEY` 또는 `GOOGLE_API_KEY`를 사용할 수 있습니다. 변경 후 `pnpm dev`를 다시 시작하세요. 모델 오류 시 `GEMINI_MODEL`을 `gemini-2.0-flash` 등으로 바꿔 보세요. 에이전트 챗(`/api/assistant-chat`)과 도슨트(`/api/ai-docent`)가 서버에서 Gemini를 호출합니다.
 
-**공공데이터(채팅 연동):** `.env.local`에 `PUBLIC_DATA_SERVICE_KEY`를 넣으면, 사용자 메시지·장소 칩에 따라 서버가 공공 오픈API를 호출하고 그 요약을 Gemini 맥락에 붙입니다. **공원** 칩은 도시공원 API, **강·산·호수·도심** 칩은 길(산책로) API(`PUBLIC_DATA_TRAIL_ENDPOINT`)를 쓰며, 길 URL을 아직 안 넣었다면 **도시공원 목록으로 자동 폴백**합니다(강 칩이면 이름·주소에 물가 단서가 있는 공원을 우선 표시). 위치는 **`src/shared/config/dummy-location.ts` 더미 좌표** 기준입니다.
+**공공데이터(채팅·추천 연동):** `.env.local`에 `PUBLIC_DATA_SERVICE_KEY`를 넣으면 추천·채팅에 공공 오픈API를 사용합니다. [전국길관광정보표준데이터](https://www.data.go.kr/data/15017321/standard.do) openapi(기본 `https://api.data.go.kr/openapi/tn_pubr_public_stret_tursm_info_api`, **별도 활용신청** 필요)로 길 후보를 가져오고, 시작·종료 주소를 **Kakao 주소 검색**(`KAKAO_REST_API_KEY`)으로 좌표 보강한 뒤 지도에 **출발(빨강)→도착(파랑) 직선**으로 표시합니다. **공원** 칩 선택 시 도시공원 API도 함께 사용합니다.
 
 ## 3. 시스템 아키텍처
 

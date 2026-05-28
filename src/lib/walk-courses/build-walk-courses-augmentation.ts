@@ -1,82 +1,38 @@
-import { DUMMY_REFERENCE_POINT } from "@/shared/config/dummy-location";
 import type {
   AssistantDurationSelection,
   AssistantPlaceSelection,
 } from "@/features/assistant-chat/model/types";
-import { haversineKm } from "@/lib/public-data/distance";
-import { loadWalkCourses } from "./load-walk-courses";
-import type { WalkCourse, WalkCourseCategory } from "./types";
+import { DUMMY_REFERENCE_POINT } from "@/shared/config/dummy-location";
+import {
+  parseDurationMin,
+  recommendWalkCourses,
+} from "./recommend-walk-courses";
+import type { WalkCourse } from "./types";
 
-const PLACE_TO_CATEGORY: Record<AssistantPlaceSelection, WalkCourseCategory> = {
-  river: "river",
-  park: "park",
-  mountain: "mountain",
-  urban: "urban",
-  lake: "lake",
-};
-
-function durationMinutes(d?: AssistantDurationSelection): number | null {
-  if (!d) return null;
-  const n = parseInt(d, 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-function withDistance(
+function formatCourseLine(
   course: WalkCourse,
-  reference: { lat: number; lng: number },
-): number | null {
-  if (course.lat == null || course.lng == null) return null;
-  return haversineKm(reference, {
-    lat: course.lat,
-    lng: course.lng,
-  });
-}
-
-function matchesCategory(
-  course: WalkCourse,
-  wanted: WalkCourseCategory[],
-): boolean {
-  if (wanted.length === 0) return true;
-  return wanted.some((c) => course.categories.includes(c));
-}
-
-function durationScore(
-  course: WalkCourse,
-  targetMin: number | null,
-): number {
-  if (targetMin == null) return 0;
-  if (course.durationMin == null) return 9999;
-  const diff = Math.abs(course.durationMin - targetMin);
-  return diff;
-}
-
-type Scored = {
-  course: WalkCourse;
-  distanceKm: number | null;
-  durationDiff: number;
-};
-
-function formatCourseLine(s: Scored, i: number): string {
-  const c = s.course;
+  distanceKm: number | null,
+  i: number,
+): string {
   const title =
-    c.courseName && c.courseName !== c.groupName
-      ? `${c.groupName} · ${c.courseName}`
-      : c.groupName || c.courseName;
+    course.courseName && course.courseName !== course.groupName
+      ? `${course.groupName} · ${course.courseName}`
+      : course.groupName || course.courseName;
   const meta: string[] = [];
-  if (c.distanceKm != null) meta.push(`${c.distanceKm}km`);
-  if (c.durationText) meta.push(`소요 ${c.durationText}`);
-  if (c.level) meta.push(`난이도 ${c.level}`);
-  if (s.distanceKm != null) {
-    meta.push(`기준점에서 약 ${s.distanceKm.toFixed(1)}km`);
+  if (course.distanceKm != null) meta.push(`${course.distanceKm}km`);
+  if (course.durationText) meta.push(`소요 ${course.durationText}`);
+  if (course.level) meta.push(`난이도 ${course.level}`);
+  if (distanceKm != null) {
+    meta.push(`기준점에서 약 ${distanceKm.toFixed(1)}km`);
   }
-  if (c.region) meta.push(c.region);
+  if (course.region) meta.push(course.region);
 
   const head = `${i + 1}. ${title}${meta.length ? ` — ${meta.join(", ")}` : ""}`;
 
-  const detail = c.description
-    ? c.description.replace(/\s+/g, " ").trim().slice(0, 140)
-    : c.waypoints
-      ? c.waypoints.replace(/\s+/g, " ").trim().slice(0, 140)
+  const detail = course.description
+    ? course.description.replace(/\s+/g, " ").trim().slice(0, 140)
+    : course.waypoints
+      ? course.waypoints.replace(/\s+/g, " ").trim().slice(0, 140)
       : "";
   return detail ? `${head}\n   ${detail}` : head;
 }
@@ -92,9 +48,14 @@ export async function buildWalkCoursesAugmentationBlock(input: {
   const referenceLabel =
     input.referencePoint?.label ?? DUMMY_REFERENCE_POINT.label;
 
-  let courses: WalkCourse[];
+  let scored;
   try {
-    courses = await loadWalkCourses();
+    scored = await recommendWalkCourses({
+      selectionPlaces: input.selectionPlaces,
+      durationMin: parseDurationMin(input.selectionDuration),
+      referencePoint: reference,
+      limit: MAX_CANDIDATES,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message.slice(0, 200) : String(e);
     return [
@@ -104,43 +65,7 @@ export async function buildWalkCoursesAugmentationBlock(input: {
     ].join(" ");
   }
 
-  if (courses.length === 0) {
-    return "[산책 코스 데이터] 산책 코스 데이터가 비어 있습니다.";
-  }
-
-  const wantedCategories =
-    input.selectionPlaces?.map((p) => PLACE_TO_CATEGORY[p]) ?? [];
-  const targetMin = durationMinutes(input.selectionDuration);
-
-  let filtered = courses.filter((c) => matchesCategory(c, wantedCategories));
-
-  /** 시간 칩이 있으면 그 시간의 1.5배 이내 코스만 우선 */
-  if (targetMin != null) {
-    const within = filtered.filter(
-      (c) => c.durationMin != null && c.durationMin <= Math.max(targetMin * 1.5, targetMin + 20),
-    );
-    if (within.length >= 3) filtered = within;
-  }
-
-  if (filtered.length === 0) filtered = courses;
-
-  const scored: Scored[] = filtered.map((course) => ({
-    course,
-    distanceKm: withDistance(course, reference),
-    durationDiff: durationScore(course, targetMin),
-  }));
-
-  scored.sort((a, b) => {
-    if (targetMin != null && a.durationDiff !== b.durationDiff) {
-      return a.durationDiff - b.durationDiff;
-    }
-    const ad = a.distanceKm ?? Number.POSITIVE_INFINITY;
-    const bd = b.distanceKm ?? Number.POSITIVE_INFINITY;
-    return ad - bd;
-  });
-
-  const top = scored.slice(0, MAX_CANDIDATES);
-  if (top.length === 0) {
+  if (scored.length === 0) {
     return "[산책 코스 데이터] 조건에 맞는 코스를 찾지 못했습니다.";
   }
 
@@ -155,7 +80,9 @@ export async function buildWalkCoursesAugmentationBlock(input: {
     "[산책 코스 데이터 — 2021년 한국관광공사 보행 둘레길/걷기길 데이터, 출처 원문이라 단정·과장 금지]",
     `사용자 선택: 시간=${durationLabel}, 장소=${placeLabel}.`,
     `기준점: ${referenceLabel} (${reference.lat.toFixed(5)}, ${reference.lng.toFixed(5)}).`,
-    `아래 ${top.length}건은 위 조건을 우선 적용한 후보입니다. 답변 시 이 목록의 항목명·거리·소요시간만 인용하고, 새 장소를 지어내지 마세요.`,
-    ...top.map(formatCourseLine),
+    `아래 ${scored.length}건은 위 조건을 우선 적용한 후보입니다. 답변 시 이 목록의 항목명·거리·소요시간만 인용하고, 새 장소를 지어내지 마세요.`,
+    ...scored.map(({ course, distanceFromUserKm }, i) =>
+      formatCourseLine(course, distanceFromUserKm, i),
+    ),
   ].join("\n");
 }

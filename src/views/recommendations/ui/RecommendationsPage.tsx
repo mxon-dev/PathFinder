@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { KakaoMap, type KakaoMapMarker } from "@/components/map/KakaoMap";
-import { MOCK_RECOMMENDED_COURSES } from "@/features/walk/model/mock-courses";
+import { useWalkRecommendations } from "@/features/walk/api/useWalkRecommendationsAPI";
 import { RECOMMENDATION_FILTERS } from "@/features/walk/model/recommendation-filters";
 import type {
   CourseCandidate,
@@ -127,17 +127,22 @@ function filterCourses(
 
 function buildCourseDetailHref(
   courseId: string,
-  params: Pick<RecommendationsPageProps, "duration" | "places">,
+  params: RecommendationsPageProps,
 ) {
   const query = new URLSearchParams();
 
   if (params.duration) query.set("duration", params.duration);
   if (params.places) query.set("places", params.places);
+  if (params.lat != null) query.set("lat", String(params.lat));
+  if (params.lng != null) query.set("lng", String(params.lng));
+  if (params.locationName) query.set("locationName", params.locationName);
+  if (params.freeText) query.set("freeText", params.freeText);
 
   const suffix = query.toString();
+  const encodedId = encodeURIComponent(courseId);
   return suffix
-    ? `/recommendations/${courseId}?${suffix}`
-    : `/recommendations/${courseId}`;
+    ? `/recommendations/${encodedId}?${suffix}`
+    : `/recommendations/${encodedId}`;
 }
 
 type RecommendationsPageProps = {
@@ -273,16 +278,29 @@ function CourseCard({
 export function RecommendationsPage({
   duration,
   places,
+  lat,
+  lng,
+  locationName,
+  freeText,
 }: RecommendationsPageProps) {
   const [activeFilter, setActiveFilter] = useState<RecommendationFilterId>("all");
+  const queryParams = useMemo(
+    () => ({ duration, places, lat, lng, locationName, freeText }),
+    [duration, places, lat, lng, locationName, freeText],
+  );
+  const { data, isLoading, isError } = useWalkRecommendations(queryParams);
+
   const summary = useMemo(
     () => getInitialSummary({ duration, places }),
     [duration, places],
   );
-  const courses = useMemo(
-    () => filterCourses(MOCK_RECOMMENDED_COURSES, activeFilter),
-    [activeFilter],
-  );
+
+  const courses = useMemo(() => {
+    const source = data?.courses ?? [];
+    return filterCourses(source, activeFilter);
+  }, [data?.courses, activeFilter]);
+
+  const locationLabel = data?.location.name ?? locationName ?? "기준 위치";
 
   return (
     <main className="fixed inset-0 box-border flex min-h-0 flex-col overflow-hidden overscroll-none bg-neutral-200/60 px-4 py-4 md:px-8 md:py-6">
@@ -332,11 +350,24 @@ export function RecommendationsPage({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50 px-4 py-4">
           <p className="text-base font-extrabold leading-6 text-slate-950">
-            &apos;{summary.durationLabel} 산책 · {summary.categoryLabel} 코스&apos;에
-            맞는 코스 {courses.length}개
+            &apos;{summary.durationLabel} · {summary.categoryLabel} 코스&apos; —{" "}
+            {locationLabel} 기준
+          </p>
+          <p className="mt-1 text-xs font-medium text-slate-400">
+            전국길관광 API + 공원 API (출발→도착 직선 경로)
           </p>
           <div className="mt-4 space-y-4 pb-6">
-            {courses.length === 0 ? (
+            {isLoading ? (
+              <div className="rounded-2xl border border-neutral-100 bg-white px-4 py-8 text-center text-sm font-bold text-slate-400">
+                주변 산책 코스를 불러오는 중…
+              </div>
+            ) : null}
+            {isError ? (
+              <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-8 text-center text-sm font-bold text-red-600">
+                코스를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.
+              </div>
+            ) : null}
+            {!isLoading && !isError && courses.length === 0 ? (
               <div className="rounded-2xl border border-neutral-100 bg-white px-4 py-8 text-center text-sm font-bold text-slate-400">
                 조건에 맞는 코스를 찾지 못했어요.
               </div>
@@ -345,7 +376,7 @@ export function RecommendationsPage({
               <CourseCard
                 key={course.id}
                 course={course}
-                href={buildCourseDetailHref(course.id, { duration, places })}
+                href={buildCourseDetailHref(course.id, queryParams)}
               />
             ))}
           </div>
