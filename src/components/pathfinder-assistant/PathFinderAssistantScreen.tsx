@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAssistantChatAPI } from "@/features/assistant-chat/api/useAssistantChatAPI";
+import { formatAssistantChatError } from "@/features/assistant-chat/lib/formatAssistantChatError";
 import type { AssistantChatLocationContext } from "@/features/assistant-chat/model/types";
 import LocationAPI from "@/features/location/api/LocationAPI";
 import {
@@ -46,6 +48,13 @@ function shouldUseLocationContext(
   return (
     duration !== null || places.length > 0 || COURSE_REQUEST_PATTERN.test(text)
   );
+}
+
+function shouldNavigateToRecommendations(
+  duration: DurationId | null,
+  places: PlaceId[],
+) {
+  return duration !== null || places.length > 0;
 }
 
 function getBrowserPosition() {
@@ -117,7 +126,9 @@ export function PathFinderAssistantScreen({
   const [isNavigating, setIsNavigating] = useState(false);
   const messageIdRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const isSubmitting = isResolvingLocation || isNavigating;
+  const chatMutation = useAssistantChatAPI();
+  const isSubmitting =
+    isResolvingLocation || isNavigating || chatMutation.isPending;
 
   const composedMessage = useMemo(
     () => buildComposedMessage(duration, places, composerText),
@@ -191,15 +202,78 @@ export function PathFinderAssistantScreen({
       }
     }
 
-    setIsNavigating(true);
-    router.push(
-      buildRecommendationHref({
-        duration,
-        places,
-        text: t,
-        location: locationContext,
-      }),
+    messageIdRef.current += 1;
+    const userLine: ChatLine = {
+      id: messageIdRef.current,
+      role: "user",
+      text: t,
+    };
+    const requestThread = [
+      ...chatLines.filter((m) => m.includeInRequest !== false),
+      userLine,
+    ];
+    const placesSnapshot = [...places];
+    const durationSnapshot = duration;
+    const navigateAfterReply = shouldNavigateToRecommendations(
+      durationSnapshot,
+      placesSnapshot,
     );
+
+    setChatLines((prev) => [...prev, userLine]);
+    setDuration(null);
+    setPlaces([]);
+    setComposerText("");
+
+    try {
+      const data = await chatMutation.mutateAsync({
+        messages: requestThread.map((m) => ({
+          role: m.role,
+          content: m.text,
+        })),
+        ...(locationContext ? { location: locationContext } : {}),
+        ...(placesSnapshot.length > 0
+          ? { selectionPlaces: placesSnapshot }
+          : {}),
+        ...(durationSnapshot ? { selectionDuration: durationSnapshot } : {}),
+      });
+
+      const replyRaw = typeof data?.reply === "string" ? data.reply.trim() : "";
+      const replyText =
+        replyRaw ||
+        "모델이 빈 응답을 반환했습니다. 잠시 후 다시 시도해 주세요.";
+
+      messageIdRef.current += 1;
+      setChatLines((prev) => [
+        ...prev,
+        {
+          id: messageIdRef.current,
+          role: "assistant",
+          text: replyText,
+        },
+      ]);
+
+      if (navigateAfterReply) {
+        setIsNavigating(true);
+        router.push(
+          buildRecommendationHref({
+            duration: durationSnapshot,
+            places: placesSnapshot,
+            text: t,
+            location: locationContext,
+          }),
+        );
+      }
+    } catch (err) {
+      messageIdRef.current += 1;
+      setChatLines((prev) => [
+        ...prev,
+        {
+          id: messageIdRef.current,
+          role: "assistant",
+          text: formatAssistantChatError(err),
+        },
+      ]);
+    }
   };
 
   const locationLabel = selectedLocation
@@ -242,7 +316,11 @@ export function PathFinderAssistantScreen({
               aria-live="polite"
             >
               <IconTypingSpinner className="h-4 w-4 shrink-0 text-blue-500" />
-              {isResolvingLocation ? "현재 위치 확인 중..." : "추천 코스로 이동 중…"}
+              {isResolvingLocation
+                ? "현재 위치 확인 중..."
+                : chatMutation.isPending
+                  ? "답변을 준비하는 중…"
+                  : "추천 코스로 이동 중…"}
             </span>
           </PathFinderBotMessage>
         ) : null}

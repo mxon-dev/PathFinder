@@ -24,7 +24,9 @@
 
 스타일은 **Tailwind CSS**를 사용합니다. 전역 진입은 `src/styles/globals.css`의 `@import "tailwindcss";`이며, 컴포넌트에서는 유틸리티 클래스로 스타일을 적용합니다.
 
-**Gemini:** API 키는 **반드시 `.env.local`**에 넣어야 합니다. (`.env.example`만 수정하면 Next가 키를 읽지 않습니다.) `GEMINI_API_KEY` 또는 Google 샘플과 동일한 `GOOGLE_API_KEY`를 사용할 수 있습니다. 변경 후 `pnpm dev`를 다시 시작하세요. 모델 오류 시 `.env.example` 주석대로 `GEMINI_MODEL`을 `gemini-2.0-flash` 등으로 바꿔 보세요. 클라이언트는 `/api/ai-docent`만 호출합니다.
+**Gemini:** API 키는 **반드시 `.env.local`**에 넣어야 합니다. (`.env.example`만 수정하면 Next가 키를 읽지 않습니다.) `GEMINI_API_KEY` 또는 `GOOGLE_API_KEY`를 사용할 수 있습니다. 변경 후 `pnpm dev`를 다시 시작하세요. 모델 오류 시 `GEMINI_MODEL`을 `gemini-2.0-flash` 등으로 바꿔 보세요. 에이전트 챗(`/api/assistant-chat`)과 도슨트(`/api/ai-docent`)가 서버에서 Gemini를 호출합니다.
+
+**공공데이터(채팅 연동):** `.env.local`에 `PUBLIC_DATA_SERVICE_KEY`를 넣으면, 사용자 메시지·장소 칩에 따라 서버가 공공 오픈API를 호출하고 그 요약을 Gemini 맥락에 붙입니다. **공원** 칩은 도시공원 API, **강·산·호수·도심** 칩은 길(산책로) API(`PUBLIC_DATA_TRAIL_ENDPOINT`)를 쓰며, 길 URL을 아직 안 넣었다면 **도시공원 목록으로 자동 폴백**합니다(강 칩이면 이름·주소에 물가 단서가 있는 공원을 우선 표시). 위치는 **`src/shared/config/dummy-location.ts` 더미 좌표** 기준입니다.
 
 ## 3. 시스템 아키텍처
 
