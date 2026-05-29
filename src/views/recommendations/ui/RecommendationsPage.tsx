@@ -210,6 +210,8 @@ function CourseMapPreview({ course }: { course: CourseCandidate }) {
 
   return (
     <KakaoMap
+      key={course.id}
+      instanceId={course.id}
       center={course.center}
       markers={markers}
       path={routePath}
@@ -354,7 +356,7 @@ export function RecommendationsPage({
             {locationLabel} 기준
           </p>
           <p className="mt-1 text-xs font-medium text-slate-400">
-            전국길관광 API + 공원 API (출발→도착 직선 경로)
+            전국길관광 API(길 경로) + 공원 API(공원 위치 표시)
           </p>
           <div className="mt-4 space-y-4 pb-6">
             {isLoading ? (

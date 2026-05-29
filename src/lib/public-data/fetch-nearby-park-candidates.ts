@@ -6,14 +6,14 @@ import {
   requestPublicDataJson,
 } from "@/lib/public-data/public-data-client";
 import {
+  extractPublicDataItems,
   type StandardListEnvelope,
-  toItemArray,
 } from "@/lib/public-data/public-data-envelope";
 
 type RawRecord = Record<string, unknown>;
 
 const DEFAULT_PARK_ENDPOINT =
-  "http://apis.data.go.kr/1613000/UrbparkInfosService/getPbParkInfoList";
+  "https://api.data.go.kr/openapi/tn_pubr_public_cty_park_info_api";
 
 const RIVER_HINT_RE = /강|천|수변|한강|하천|탄천|개울|워터|해안|수목/i;
 
@@ -34,7 +34,12 @@ function parkTitle(it: RawRecord): string {
 
 function parkId(it: RawRecord, title: string): string {
   const raw =
-    it["관리번호"] ?? it["mngNo"] ?? it["parkId"] ?? it["dataId"] ?? title;
+    it["관리번호"] ??
+      it["manageNo"] ??
+      it["mngNo"] ??
+      it["parkId"] ??
+      it["dataId"] ??
+      title;
   return `park-${String(raw).trim().replace(/\s+/g, "-")}`;
 }
 
@@ -54,6 +59,29 @@ function pageSize(): number {
   return Number.isFinite(n) && n > 0 ? Math.min(n, 500) : 120;
 }
 
+/** 공원 면적(m²) → 둘레 산책 거리(km) 추정 */
+function estimateWalkKmFromArea(areaRaw: unknown): number | undefined {
+  const area = Number.parseFloat(String(areaRaw ?? "").replace(/,/g, ""));
+  if (!Number.isFinite(area) || area <= 0) return undefined;
+  const radiusM = Math.sqrt(area / Math.PI);
+  return Math.max((2 * Math.PI * radiusM) / 1000, 0.1);
+}
+
+/** 산책 거리(km) → 도보 소요시간(분, 4km/h 기준, 1분 단위·최소 5분)
+ *  5분 단위로 반올림하면 작은 공원의 차이가 모두 10분으로 뭉개져 1분 단위로 둔다. */
+function estimateWalkMinFromKm(distanceKm?: number): number | undefined {
+  if (distanceKm == null || distanceKm <= 0) return undefined;
+  const rawMin = (distanceKm / 4) * 60;
+  return Math.max(5, Math.round(rawMin));
+}
+
+const WALK_SPEED_KMH = 4;
+
+/** 도보 소요시간(분) → 거리(km, 4km/h 기준) */
+function kmFromWalkMin(durationMin: number): number {
+  return (durationMin / 60) * WALK_SPEED_KMH;
+}
+
 function shouldFetchParks(places: AssistantPlaceSelection[]): boolean {
   if (!places.length) return true;
   return places.some((p) => p === "park" || p === "river" || p === "lake");
@@ -63,6 +91,7 @@ function shouldFetchParks(places: AssistantPlaceSelection[]): boolean {
 export async function fetchNearbyParkCandidates(input: {
   reference: LatLng & { label?: string };
   selectionPlaces?: AssistantPlaceSelection[];
+  durationMin?: number | null;
   limit?: number;
 }): Promise<CourseCandidate[]> {
   const key = process.env.PUBLIC_DATA_SERVICE_KEY?.trim();
@@ -87,7 +116,7 @@ export async function fetchNearbyParkCandidates(input: {
     return [];
   }
 
-  const rawItems = toItemArray(data.response?.body?.items?.item);
+  const rawItems = extractPublicDataItems(data.response?.body?.items);
   const riverPref = places.includes("river");
 
   const enriched = rawItems
@@ -110,8 +139,20 @@ export async function fetchNearbyParkCandidates(input: {
       ).trim();
       const agency = String(it["관리기관명"] ?? it["institutionNm"] ?? "").trim();
       const km = haversineKm(input.reference, { lat, lng });
+      const distanceKm = estimateWalkKmFromArea(
+        it["공원면적"] ?? it["parkAr"] ?? it["PARK_AR"],
+      );
 
-      return { title, lat, lng, addr, agency, km, id: parkId(it, title) };
+      return {
+        title,
+        lat,
+        lng,
+        addr,
+        agency,
+        km,
+        distanceKm,
+        id: parkId(it, title),
+      };
     })
     .filter((x): x is NonNullable<typeof x> => x != null)
     .filter((x) => x.km <= radiusKm());
@@ -122,28 +163,34 @@ export async function fetchNearbyParkCandidates(input: {
     if (riverFirst.length >= 2) near = riverFirst;
   }
 
+  // 사용자가 산책 시간을 고르면 그 시간을 "이 공원 추천 산책 시간"으로 삼고,
+  // 거리도 그 시간(4km/h)에 맞춘다. 미선택 시 공원 면적 기반 추정값 사용.
+  const requestedMin =
+    input.durationMin != null && input.durationMin > 0
+      ? input.durationMin
+      : null;
+
   const limit = input.limit ?? 8;
-  return near.slice(0, limit).map((x) => ({
-    id: x.id,
-    title: x.title,
-    category:
-      riverPref && RIVER_HINT_RE.test(`${x.title} ${x.addr}`)
-        ? ["river", "park"]
-        : ["park"],
-    source: "public_park" as const,
-    center: { lat: x.lat, lng: x.lng },
-    start: {
-      name: x.addr || x.title,
-      lat: x.lat,
-      lng: x.lng,
-    },
-    description: [
-      x.addr,
-      x.agency,
-      `기준 위치에서 약 ${x.km.toFixed(1)}km`,
-    ]
-      .filter(Boolean)
-      .join(" · ")
-      .slice(0, 220),
-  }));
+  return near.slice(0, limit).map((x) => {
+    const durationMin = requestedMin ?? estimateWalkMinFromKm(x.distanceKm);
+    const distanceKm =
+      requestedMin != null ? kmFromWalkMin(requestedMin) : x.distanceKm;
+
+    return {
+      id: x.id,
+      title: x.title,
+      category:
+        riverPref && RIVER_HINT_RE.test(`${x.title} ${x.addr}`)
+          ? ["river", "park"]
+          : ["park"],
+      source: "public_park" as const,
+      center: { lat: x.lat, lng: x.lng },
+      distanceKm,
+      durationMin,
+      description: [x.addr, x.agency, `기준 위치에서 약 ${x.km.toFixed(1)}km`]
+        .filter(Boolean)
+        .join(" · ")
+        .slice(0, 220),
+    };
+  });
 }

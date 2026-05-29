@@ -72,6 +72,7 @@ export async function buildWalkRecommendations(
     fetchNearbyParkCandidates({
       reference,
       selectionPlaces,
+      durationMin,
       limit: 6,
     }),
   ]);

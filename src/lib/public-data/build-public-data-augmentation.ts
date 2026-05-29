@@ -7,8 +7,8 @@ import {
   requestPublicDataJson,
 } from "./public-data-client";
 import {
+  extractPublicDataItems,
   type StandardListEnvelope,
-  toItemArray,
 } from "./public-data-envelope";
 import { normalizeTourismTrail } from "./normalizers/normalize-trails";
 import {
@@ -21,7 +21,7 @@ import { resolvePublicDataIntent } from "./resolve-public-data-intent";
 type RawRecord = Record<string, unknown>;
 
 const DEFAULT_PARK_ENDPOINT =
-  "http://apis.data.go.kr/1613000/UrbparkInfosService/getPbParkInfoList";
+  "https://api.data.go.kr/openapi/tn_pubr_public_cty_park_info_api";
 
 const RIVER_HINT_RE = /강|천|수변|한강|하천|탄천|개울|워터|해안|수목/i;
 
@@ -90,7 +90,7 @@ async function buildUrbanParkAugmentationLines(options: {
   });
 
   await assertPublicDataHeader(data);
-  const rawItems = toItemArray(data.response?.body?.items?.item);
+  const rawItems = extractPublicDataItems(data.response?.body?.items);
 
   const enriched = rawItems.map((it) => {
     const title = parkTitle(it);

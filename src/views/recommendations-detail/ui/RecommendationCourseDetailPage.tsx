@@ -116,6 +116,8 @@ function CourseDetailMap({ course }: { course: CourseCandidate }) {
 
   return (
     <KakaoMap
+      key={course.id}
+      instanceId={course.id}
       center={course.center}
       markers={markers}
       path={routePath}

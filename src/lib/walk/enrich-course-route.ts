@@ -61,9 +61,11 @@ export function parseWaypointLabels(waypoints: string): string[] {
     .filter((label) => label.length >= 2);
 }
 
-function loopRadiusKm(distanceKm?: number | null): number {
+function loopRadiusKm(distanceKm?: number | null, seed = 0): number {
   const km = distanceKm != null && distanceKm > 0 ? distanceKm : 1.2;
-  return Math.max(km / (2 * Math.PI), 0.12);
+  const base = Math.max(km / (2 * Math.PI), 0.12);
+  const scale = 0.85 + (seed % 7) * 0.08;
+  return base * scale;
 }
 
 function isLoopTrail(waypoints: string): boolean {
@@ -98,7 +100,7 @@ export function generateLoopPath(
   distanceKm?: number | null,
   seed = 0,
 ): LatLng[] {
-  const radiusKm = loopRadiusKm(distanceKm);
+  const radiusKm = loopRadiusKm(distanceKm, seed);
   const startAngle = (seed % 360) + 15;
   const segments = 8 + (seed % 5);
   const points: LatLng[] = [];
@@ -162,30 +164,14 @@ export function enrichCourseRoute(
     (candidate.source === "kakao_local" && !input.waypoints);
 
   if (isParkLike) {
-    const dest = candidate.center;
-    const refFar =
-      haversineKm(reference, dest) > 0.05
-        ? reference
-        : offsetPoint(dest, 225, 0.4);
-    const path = interpolatePath(refFar, dest, 6);
-
+    // 공원은 점(point) 데이터라 실제 경로가 없다.
+    // 가짜 루프 대신 공원 위치 마커 하나만 노출한다.
     return {
       ...candidate,
-      start: {
-        name: input.reference.label?.trim() || "내 위치",
-        lat: refFar.lat,
-        lng: refFar.lng,
-      },
-      end: {
-        name: candidate.start?.name ?? candidate.title,
-        lat: dest.lat,
-        lng: dest.lng,
-      },
-      path,
-      center: {
-        lat: (refFar.lat + dest.lat) / 2,
-        lng: (refFar.lng + dest.lng) / 2,
-      },
+      start: undefined,
+      end: undefined,
+      path: undefined,
+      center: candidate.center,
     };
   }
 
@@ -237,16 +223,4 @@ export function enrichCourseRoute(
       lng: (path[0].lng + pathEnd.lng) / 2,
     },
   };
-}
-
-function haversineKm(a: LatLng, b: LatLng): number {
-  const R = 6371;
-  const dLat = deg2rad(b.lat - a.lat);
-  const dLng = deg2rad(b.lng - a.lng);
-  const lat1 = deg2rad(a.lat);
-  const lat2 = deg2rad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }

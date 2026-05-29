@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadKakaoMapSdk } from "@/lib/kakao/kakao-map-loader";
 import type { LatLng } from "@/lib/kakao/kakao-types";
 
@@ -12,6 +12,8 @@ export type KakaoMapMarker = {
 };
 
 type KakaoMapProps = {
+  /** 목록 등 동일 컴포넌트가 여러 개일 때 지도 인스턴스를 구분 */
+  instanceId?: string;
   center: LatLng;
   level?: number;
   markers?: KakaoMapMarker[];
@@ -41,7 +43,25 @@ function createMarkerContent(marker: KakaoMapMarker, interactive: boolean) {
   return outer;
 }
 
+function clearMapContainer(container: HTMLDivElement) {
+  container.replaceChildren();
+}
+
+function buildContentSignature(input: {
+  instanceId?: string;
+  center: LatLng;
+  level: number;
+  markers: KakaoMapMarker[];
+  path: LatLng[];
+  pathStrokeColor: string;
+  pathStrokeWeight: number;
+  interactive: boolean;
+}) {
+  return JSON.stringify(input);
+}
+
 export function KakaoMap({
+  instanceId,
   center,
   level = 5,
   markers = [],
@@ -60,17 +80,52 @@ export function KakaoMap({
     className ?? "",
   );
 
+  const contentSignature = useMemo(
+    () =>
+      buildContentSignature({
+        instanceId,
+        center,
+        level,
+        markers,
+        path,
+        pathStrokeColor,
+        pathStrokeWeight,
+        interactive,
+      }),
+    [
+      instanceId,
+      center.lat,
+      center.lng,
+      interactive,
+      level,
+      markers,
+      path,
+      pathStrokeColor,
+      pathStrokeWeight,
+    ],
+  );
+
   useEffect(() => {
     let map: any;
-    let polyline: any | null = null;
     let renderedMarkers: any[] = [];
+    let polyline: any | null = null;
     let frameId: number | null = null;
     let secondFrameId: number | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let cancelled = false;
 
+    function cleanupOverlays() {
+      renderedMarkers.forEach((marker) => marker.setMap(null));
+      renderedMarkers = [];
+      if (polyline) {
+        polyline.setMap(null);
+        polyline = null;
+      }
+    }
+
     async function renderMap() {
-      if (!containerRef.current) return;
+      const container = containerRef.current;
+      if (!container) return;
 
       setStatus("loading");
       setErrorMessage("");
@@ -78,6 +133,9 @@ export function KakaoMap({
       try {
         const kakao = await loadKakaoMapSdk();
         if (cancelled || !containerRef.current) return;
+
+        cleanupOverlays();
+        clearMapContainer(containerRef.current);
 
         const mapCenter = new kakao.maps.LatLng(center.lat, center.lng);
         map = new kakao.maps.Map(containerRef.current, {
@@ -110,6 +168,8 @@ export function KakaoMap({
             content: createMarkerContent(marker, interactive),
             xAnchor: 0.5,
             yAnchor: 0.5,
+            zIndex:
+              marker.tone === "start" ? 3 : marker.tone === "end" ? 2 : 1,
           });
         });
 
@@ -125,7 +185,7 @@ export function KakaoMap({
         }
 
         const fitMapToContent = () => {
-          if (!map) return;
+          if (!map || cancelled) return;
           map.relayout();
           if (boundsPointCount >= 2) {
             map.setBounds(bounds);
@@ -133,6 +193,7 @@ export function KakaoMap({
           }
 
           map.setCenter(mapCenter);
+          map.setLevel(level);
         };
 
         fitMapToContent();
@@ -141,12 +202,10 @@ export function KakaoMap({
           window.setTimeout(fitMapToContent, 120);
         });
 
-        if (typeof ResizeObserver !== "undefined" && containerRef.current) {
-          resizeObserver = new ResizeObserver(fitMapToContent);
-          resizeObserver.observe(containerRef.current);
-        }
+        resizeObserver = new ResizeObserver(fitMapToContent);
+        resizeObserver.observe(containerRef.current);
 
-        setStatus("ready");
+        if (!cancelled) setStatus("ready");
       } catch (error) {
         if (!cancelled) {
           setErrorMessage(error instanceof Error ? error.message : "");
@@ -162,20 +221,11 @@ export function KakaoMap({
       if (frameId !== null) window.cancelAnimationFrame(frameId);
       if (secondFrameId !== null) window.cancelAnimationFrame(secondFrameId);
       resizeObserver?.disconnect();
-      renderedMarkers.forEach((marker) => marker.setMap(null));
-      if (polyline) polyline.setMap(null);
-      if (map) map = null;
+      cleanupOverlays();
+      if (containerRef.current) clearMapContainer(containerRef.current);
+      map = null;
     };
-  }, [
-    center.lat,
-    center.lng,
-    interactive,
-    level,
-    markers,
-    path,
-    pathStrokeColor,
-    pathStrokeWeight,
-  ]);
+  }, [contentSignature]);
 
   return (
     <div

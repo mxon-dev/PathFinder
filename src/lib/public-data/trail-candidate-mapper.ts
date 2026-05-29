@@ -7,8 +7,8 @@ import {
   requestPublicDataJson,
 } from "@/lib/public-data/public-data-client";
 import {
+  extractPublicDataItems,
   type StandardListEnvelope,
-  toItemArray,
 } from "@/lib/public-data/public-data-envelope";
 
 type RawRecord = Record<string, unknown>;
@@ -43,7 +43,7 @@ export async function fetchTourismTrailRecords(): Promise<RawRecord[]> {
   });
 
   await assertPublicDataHeader(data);
-  return toItemArray(data.response?.body?.items?.item);
+  return extractPublicDataItems(data.response?.body?.items);
 }
 
 export function matchesTrailPlaces(
