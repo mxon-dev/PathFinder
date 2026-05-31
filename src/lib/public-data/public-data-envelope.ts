@@ -2,7 +2,8 @@ export type StandardListEnvelope<T> = {
   response?: {
     header?: { resultCode?: string; resultMsg?: string };
     body?: {
-      items?: { item?: T | T[] };
+      /** 일부 API는 `{ item: T[] }`, 길 API는 `T[]` 배열을 바로 둠 */
+      items?: { item?: T | T[] } | T[];
       totalCount?: number | string;
       pageNo?: number | string;
       numOfRows?: number | string;

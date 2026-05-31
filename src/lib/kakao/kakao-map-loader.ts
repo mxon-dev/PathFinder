@@ -2,7 +2,18 @@ type KakaoSdk = typeof window.kakao;
 
 let kakaoMapLoadingPromise: Promise<KakaoSdk> | null = null;
 const KAKAO_MAP_SCRIPT_SELECTOR = 'script[data-kakao-map-sdk="true"]';
-const KAKAO_MAP_LOAD_TIMEOUT_MS = 8000;
+const KAKAO_MAP_LOAD_TIMEOUT_MS = 12_000;
+
+function buildKakaoDomainMismatchMessage(origin: string): string {
+  return `카카오 지도 JavaScript 키에 "${origin}"을 Web 플랫폼 사이트 도메인으로 등록해 주세요.`;
+}
+
+function isKakaoDomainMismatchPayload(text: string): boolean {
+  return (
+    text.includes("domain mismatched") ||
+    text.includes("AccessDeniedError")
+  );
+}
 
 declare global {
   interface Window {
@@ -40,14 +51,15 @@ export function loadKakaoMapSdk(): Promise<KakaoSdk> {
       timeoutId = null;
     };
 
-    const rejectWithDomainHint = () => {
+    const rejectWithDomainHint = (detail?: string) => {
       clearLoadTimeout();
       kakaoMapLoadingPromise = null;
-      reject(
-        new Error(
-          "Kakao Map SDK could not be loaded. Register this page origin as a Web platform domain in Kakao Developers.",
-        ),
-      );
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      const hint = origin
+        ? buildKakaoDomainMismatchMessage(origin)
+        : "Kakao Developers > 앱 > 플랫폼 > Web 사이트 도메인을 확인해 주세요.";
+      reject(new Error(detail ? `${hint} (${detail})` : hint));
     };
 
     const resolveLoadedSdk = () => {
@@ -81,7 +93,7 @@ export function loadKakaoMapSdk(): Promise<KakaoSdk> {
 
       if (existingScript.dataset.kakaoMapSdkStatus === "loading") {
         existingScript.addEventListener("load", resolveLoadedSdk, { once: true });
-        existingScript.addEventListener("error", rejectWithDomainHint, {
+        existingScript.addEventListener("error", () => rejectWithDomainHint(), {
           once: true,
         });
         timeoutId = setTimeout(rejectWithDomainHint, KAKAO_MAP_LOAD_TIMEOUT_MS);
@@ -95,18 +107,34 @@ export function loadKakaoMapSdk(): Promise<KakaoSdk> {
     script.dataset.kakaoMapSdk = "true";
     script.dataset.kakaoMapSdkStatus = "loading";
     script.async = true;
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appKey}&libraries=services&autoload=false`;
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appKey}&autoload=false`;
 
     timeoutId = setTimeout(rejectWithDomainHint, KAKAO_MAP_LOAD_TIMEOUT_MS);
 
-    script.onload = () => {
+    script.onload = async () => {
       script.dataset.kakaoMapSdkStatus = "loaded";
+
+      if (!window.kakao?.maps?.load) {
+        try {
+          const probe = await fetch(script.src);
+          const body = await probe.text();
+          if (isKakaoDomainMismatchPayload(body)) {
+            rejectWithDomainHint("domain mismatched");
+            return;
+          }
+        } catch {
+          // ignore probe errors
+        }
+        rejectWithDomainHint();
+        return;
+      }
+
       resolveLoadedSdk();
     };
 
     script.onerror = () => {
       script.dataset.kakaoMapSdkStatus = "failed";
-      rejectWithDomainHint();
+      rejectWithDomainHint("script error");
     };
 
     document.head.appendChild(script);

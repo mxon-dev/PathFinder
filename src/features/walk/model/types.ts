@@ -28,6 +28,8 @@ export type CourseCandidate = {
     lng?: number;
   };
   path?: LatLng[];
+  /** 경로정보 경유지 (출발·중간·도착) */
+  waypoints?: { name: string; lat: number; lng: number }[];
   distanceKm?: number;
   durationMin?: number;
   description: string;

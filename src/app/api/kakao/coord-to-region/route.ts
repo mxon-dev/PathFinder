@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  coordToRegion,
-  KakaoLocalApiError,
-} from "@/lib/kakao/kakao-local-client";
+import { coordToRegion, KakaoLocalApiError } from "@/lib/kakao/kakao-local-client";
+import { kakaoErrorToHttpResponse } from "@/lib/kakao/kakao-route-errors";
 
 export const runtime = "nodejs";
 
@@ -11,6 +9,7 @@ function kakaoFailureLog(error: unknown) {
     console.error("[kakao/coord-to-region]", {
       status: error.status,
       endpoint: error.endpoint,
+      kakaoMessage: error.kakaoMessage,
     });
     return;
   }
@@ -44,9 +43,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     kakaoFailureLog(error);
-    return NextResponse.json(
-      { message: "Failed to convert coordinate to region." },
-      { status: 502 },
-    );
+    const { status, body } = kakaoErrorToHttpResponse(error);
+    return NextResponse.json(body, { status });
   }
 }

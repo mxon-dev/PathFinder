@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  KakaoLocalApiError,
-  searchKeyword,
-} from "@/lib/kakao/kakao-local-client";
+import { searchKeyword, KakaoLocalApiError } from "@/lib/kakao/kakao-local-client";
+import { kakaoErrorToHttpResponse } from "@/lib/kakao/kakao-route-errors";
 import type {
   KakaoPlaceDocument,
   NormalizedKakaoPlace,
@@ -39,6 +37,8 @@ function kakaoFailureLog(error: unknown, query: string) {
       status: error.status,
       endpoint: error.endpoint,
       query,
+      kakaoCode: error.kakaoCode,
+      kakaoMessage: error.kakaoMessage,
     });
     return;
   }
@@ -104,9 +104,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     kakaoFailureLog(error, query);
-    return NextResponse.json(
-      { message: "Failed to search Kakao keyword." },
-      { status: 502 },
-    );
+    const { status, body } = kakaoErrorToHttpResponse(error);
+    return NextResponse.json(body, { status });
   }
 }

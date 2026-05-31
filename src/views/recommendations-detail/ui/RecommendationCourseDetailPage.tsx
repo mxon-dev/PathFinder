@@ -3,9 +3,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
-import { KakaoMap, type KakaoMapMarker } from "@/components/map/KakaoMap";
+import { KakaoMap } from "@/components/map/KakaoMap";
 import { IconClock } from "@/components/pathfinder-assistant/icons";
 import type { CourseCandidate } from "@/features/walk/model/types";
+import { buildCourseMapMarkers } from "@/lib/walk/build-course-map-markers";
 
 type RecommendationCourseDetailPageProps = {
   course: CourseCandidate;
@@ -69,50 +70,10 @@ function CourseDetailMap({ course }: { course: CourseCandidate }) {
     () => (course.path && course.path.length >= 2 ? course.path : []),
     [course.path],
   );
-  const markers = useMemo<KakaoMapMarker[]>(() => {
-    const nextMarkers: KakaoMapMarker[] = [];
-
-    if (
-      typeof course.start?.lat === "number" &&
-      typeof course.start.lng === "number"
-    ) {
-      nextMarkers.push({
-        id: `${course.id}-start`,
-        position: {
-          lat: course.start.lat,
-          lng: course.start.lng,
-        },
-        title: course.start.name ?? `${course.title} 출발`,
-        tone: "start",
-      });
-    }
-
-    if (
-      typeof course.end?.lat === "number" &&
-      typeof course.end.lng === "number"
-    ) {
-      nextMarkers.push({
-        id: `${course.id}-end`,
-        position: {
-          lat: course.end.lat,
-          lng: course.end.lng,
-        },
-        title: course.end.name ?? `${course.title} 도착`,
-        tone: "end",
-      });
-    }
-
-    if (nextMarkers.length === 0) {
-      nextMarkers.push({
-        id: `${course.id}-center`,
-        position: course.center,
-        title: course.title,
-        tone: "default",
-      });
-    }
-
-    return nextMarkers;
-  }, [course.center, course.end, course.id, course.start, course.title]);
+  const markers = useMemo(
+    () => buildCourseMapMarkers(course),
+    [course],
+  );
 
   return (
     <KakaoMap

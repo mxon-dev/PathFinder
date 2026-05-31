@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { KakaoMap, type KakaoMapMarker } from "@/components/map/KakaoMap";
+import { KakaoMap } from "@/components/map/KakaoMap";
 import { useWalkRecommendations } from "@/features/walk/api/useWalkRecommendationsAPI";
 import { RECOMMENDATION_FILTERS } from "@/features/walk/model/recommendation-filters";
 import type {
@@ -10,6 +10,7 @@ import type {
   RecommendationFilterId,
   WalkCategory,
 } from "@/features/walk/model/types";
+import { buildCourseMapMarkers } from "@/lib/walk/build-course-map-markers";
 
 const CATEGORY_META: Record<
   WalkCategory,
@@ -173,40 +174,7 @@ function CourseMapPreview({ course }: { course: CourseCandidate }) {
     () => (course.path && course.path.length >= 2 ? course.path : []),
     [course.path],
   );
-  const markers = useMemo(() => {
-    const nextMarkers: KakaoMapMarker[] = [];
-    const start = course.start;
-    const end = course.end;
-
-    if (typeof start?.lat === "number" && typeof start.lng === "number") {
-      nextMarkers.push({
-        id: `${course.id}-start`,
-        position: { lat: start.lat, lng: start.lng },
-        title: start.name ?? `${course.title} 출발`,
-        tone: "start" as const,
-      });
-    }
-
-    if (typeof end?.lat === "number" && typeof end.lng === "number") {
-      nextMarkers.push({
-        id: `${course.id}-end`,
-        position: { lat: end.lat, lng: end.lng },
-        title: end.name ?? `${course.title} 도착`,
-        tone: "end" as const,
-      });
-    }
-
-    if (nextMarkers.length === 0) {
-      nextMarkers.push({
-        id: `${course.id}-center`,
-        position: course.center,
-        title: course.title,
-        tone: "default" as const,
-      });
-    }
-
-    return nextMarkers;
-  }, [course.center, course.end, course.id, course.start, course.title]);
+  const markers = useMemo(() => buildCourseMapMarkers(course), [course]);
 
   return (
     <KakaoMap
@@ -356,7 +324,7 @@ export function RecommendationsPage({
             {locationLabel} 기준
           </p>
           <p className="mt-1 text-xs font-medium text-slate-400">
-            전국길관광 API(길 경로) + 공원 API(공원 위치 표시)
+            전국길관광 API(경유지 경로) + 공원 API
           </p>
           <div className="mt-4 space-y-4 pb-6">
             {isLoading ? (

@@ -87,7 +87,6 @@ export function normalizeTourismTrail(
         row["endRoadAddress"],
         row["종료지점소재지지번주소"],
         row["endLnmadr"],
-        row["endLatitude"],
       ),
     },
     phone: String(

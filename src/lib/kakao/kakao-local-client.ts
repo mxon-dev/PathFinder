@@ -10,13 +10,38 @@ export class KakaoLocalApiError extends Error {
   status: number;
   statusText: string;
   endpoint: string;
+  kakaoCode?: number;
+  kakaoMessage?: string;
 
-  constructor(params: { status: number; statusText: string; endpoint: string }) {
-    super(`Kakao Local API failed: ${params.status} ${params.statusText}`);
+  constructor(params: {
+    status: number;
+    statusText: string;
+    endpoint: string;
+    kakaoCode?: number;
+    kakaoMessage?: string;
+  }) {
+    const detail = params.kakaoMessage ?? params.statusText;
+    super(`Kakao Local API failed: ${params.status} ${detail}`);
     this.name = "KakaoLocalApiError";
     this.status = params.status;
     this.statusText = params.statusText;
     this.endpoint = params.endpoint;
+    this.kakaoCode = params.kakaoCode;
+    this.kakaoMessage = params.kakaoMessage;
+  }
+
+  get isQuotaExceeded(): boolean {
+    return this.kakaoCode === -10;
+  }
+
+  /** 새 앱에서 지도/로컬(OPEN_MAP_AND_LOCAL) 미활성화 시 403 */
+  get isLocalServiceDisabled(): boolean {
+    const msg = this.kakaoMessage ?? "";
+    return (
+      this.status === 403 &&
+      (msg.includes("OPEN_MAP_AND_LOCAL") ||
+        (msg.includes("disabled") && msg.includes("LOCAL")))
+    );
   }
 }
 
@@ -50,10 +75,25 @@ export async function requestKakaoLocal<T>(
   });
 
   if (!response.ok) {
+    let kakaoCode: number | undefined;
+    let kakaoMessage: string | undefined;
+    try {
+      const body = (await response.json()) as {
+        code?: number;
+        message?: string;
+        msg?: string;
+      };
+      kakaoCode = body.code;
+      kakaoMessage = body.message ?? body.msg;
+    } catch {
+      // ignore parse errors
+    }
     throw new KakaoLocalApiError({
       status: response.status,
       statusText: response.statusText,
       endpoint: path,
+      kakaoCode,
+      kakaoMessage,
     });
   }
 
@@ -78,14 +118,21 @@ export async function searchKeyword(params: {
   size?: number;
   sort?: "accuracy" | "distance";
 }) {
+  const hasCenter =
+    typeof params.lat === "number" &&
+    typeof params.lng === "number" &&
+    Number.isFinite(params.lat) &&
+    Number.isFinite(params.lng);
+
   return requestKakaoLocal<KakaoPlaceDocument>("/search/keyword.json", {
     query: params.query,
-    x: params.lng,
-    y: params.lat,
-    radius: params.radius ?? 3000,
+    x: hasCenter ? params.lng : undefined,
+    y: hasCenter ? params.lat : undefined,
+    radius: hasCenter ? (params.radius ?? 20_000) : undefined,
     page: params.page ?? 1,
     size: params.size ?? 10,
-    sort: params.sort ?? "accuracy",
+    sort:
+      hasCenter && params.sort === "distance" ? "distance" : "accuracy",
   });
 }
 

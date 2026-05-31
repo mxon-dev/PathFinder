@@ -8,7 +8,8 @@ export type KakaoMapMarker = {
   id: string;
   position: LatLng;
   title: string;
-  tone?: "default" | "start" | "end";
+  tone?: "default" | "start" | "end" | "waypoint";
+  order?: number;
 };
 
 type KakaoMapProps = {
@@ -27,18 +28,35 @@ type KakaoMapProps = {
 function createMarkerContent(marker: KakaoMapMarker, interactive: boolean) {
   const outer = document.createElement("div");
   const tone = marker.tone ?? "default";
-  const fillColor =
-    tone === "start" ? "#f87171" : tone === "end" ? "#0ea5e9" : "#2563eb";
+  const isWaypoint = tone === "waypoint";
 
   outer.title = marker.title;
-  outer.style.width = "20px";
-  outer.style.height = "20px";
+  outer.style.display = "flex";
+  outer.style.alignItems = "center";
+  outer.style.justifyContent = "center";
+  outer.style.width = isWaypoint ? "22px" : "20px";
+  outer.style.height = isWaypoint ? "22px" : "20px";
   outer.style.borderRadius = "9999px";
-  outer.style.background = fillColor;
-  outer.style.border = "4px solid #fff";
+  outer.style.background =
+    tone === "start"
+      ? "#f87171"
+      : tone === "end"
+        ? "#0ea5e9"
+        : tone === "waypoint"
+          ? "#6366f1"
+          : "#2563eb";
+  outer.style.border = "3px solid #fff";
   outer.style.boxShadow = "0 4px 10px rgba(15, 23, 42, 0.25)";
   outer.style.boxSizing = "border-box";
   outer.style.pointerEvents = interactive ? "auto" : "none";
+  outer.style.fontSize = "10px";
+  outer.style.fontWeight = "700";
+  outer.style.color = "#fff";
+  outer.style.lineHeight = "1";
+
+  if (isWaypoint && marker.order != null) {
+    outer.textContent = String(marker.order);
+  }
 
   return outer;
 }
@@ -76,9 +94,6 @@ export function KakaoMap({
     "loading",
   );
   const [errorMessage, setErrorMessage] = useState("");
-  const hasPositionClass = /\b(?:absolute|fixed|relative|sticky)\b/.test(
-    className ?? "",
-  );
 
   const contentSignature = useMemo(
     () =>
@@ -229,20 +244,25 @@ export function KakaoMap({
 
   return (
     <div
-      className={`${hasPositionClass ? "" : "relative"} overflow-hidden bg-slate-100 ${className ?? ""}`}
+      className={`relative min-h-[8rem] overflow-hidden bg-slate-100 ${className ?? ""}`}
     >
-      <div ref={containerRef} className="h-full w-full" />
+      <div ref={containerRef} className="h-full min-h-[inherit] w-full" />
       {status === "loading" ? (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-100 text-xs font-medium text-slate-500">
           지도 불러오는 중
         </div>
       ) : null}
       {status === "failed" ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-slate-100 px-4 text-center text-xs font-medium text-slate-500">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-100 px-4 text-center text-xs font-medium text-slate-500">
           <span>지도를 불러오지 못했어요.</span>
           {errorMessage ? (
-            <span className="text-[11px] leading-4 text-slate-400">
-              Kakao Developers의 Web 플랫폼 도메인을 확인해 주세요.
+            <span className="max-w-sm text-[11px] leading-5 text-slate-400">
+              {errorMessage}
+            </span>
+          ) : null}
+          {typeof window !== "undefined" ? (
+            <span className="text-[10px] text-slate-300">
+              현재 접속: {window.location.origin}
             </span>
           ) : null}
         </div>

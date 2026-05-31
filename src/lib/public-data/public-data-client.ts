@@ -31,6 +31,53 @@ function appendServiceKey(rawUrl: string, key: string): string {
   return `${rawUrl}${sep}serviceKey=${value}`;
 }
 
+function isRetryableFetchError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  const cause = (error as NodeJS.ErrnoException).cause;
+  const code =
+    (error as NodeJS.ErrnoException).code ??
+    (cause instanceof Error && "code" in cause
+      ? String((cause as NodeJS.ErrnoException).code)
+      : "");
+  return (
+    msg.includes("fetch failed") ||
+    msg.includes("aborted") ||
+    code === "ECONNRESET" ||
+    code === "ETIMEDOUT" ||
+    code === "ECONNREFUSED"
+  );
+}
+
+async function fetchWithRetry(
+  url: string,
+  attempts = 3,
+  timeoutMs = 25_000,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const response = await fetch(url, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableFetchError(error) || attempt === attempts - 1) {
+        throw error;
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, 400 * (attempt + 1)),
+      );
+    }
+  }
+  throw lastError;
+}
+
 export async function requestPublicDataJson<T>(
   opts: RequestOpts,
 ): Promise<T> {
@@ -56,7 +103,7 @@ export async function requestPublicDataJson<T>(
     console.log("[public-data] GET", masked);
   }
 
-  const response = await fetch(finalUrl, { cache: "no-store" });
+  const response = await fetchWithRetry(finalUrl);
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");

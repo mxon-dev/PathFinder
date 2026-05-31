@@ -88,21 +88,50 @@ export function trailToCourseCandidate(
   const endPos = trail.end?.position;
   if (!startPos || !endPos) return null;
 
-  const path = Array.from({ length: 9 }, (_, i) => {
-    const t = i / 8;
-    return {
-      lat: startPos.lat + (endPos.lat - startPos.lat) * t,
-      lng: startPos.lng + (endPos.lng - startPos.lng) * t,
-    };
-  });
+  const path =
+    trail.path && trail.path.length >= 2
+      ? trail.path
+      : Array.from({ length: 9 }, (_, i) => {
+          const t = i / 8;
+          return {
+            lat: startPos.lat + (endPos.lat - startPos.lat) * t,
+            lng: startPos.lng + (endPos.lng - startPos.lng) * t,
+          };
+        });
 
-  const center = {
-    lat: (startPos.lat + endPos.lat) / 2,
-    lng: (startPos.lng + endPos.lng) / 2,
-  };
+  const center =
+    trail.center ??
+    (path.length >= 2
+      ? {
+          lat: path.reduce((s, p) => s + p.lat, 0) / path.length,
+          lng: path.reduce((s, p) => s + p.lng, 0) / path.length,
+        }
+      : {
+          lat: (startPos.lat + endPos.lat) / 2,
+          lng: (startPos.lng + endPos.lng) / 2,
+        });
 
   const routeText =
     typeof trail.raw?.routeText === "string" ? trail.raw.routeText : "";
+
+  const waypoints =
+    trail.pathWaypoints?.map((w) => ({
+      name: w.name,
+      lat: w.position.lat,
+      lng: w.position.lng,
+    })) ??
+    (path.length >= 2
+      ? path.map((p, i) => ({
+          name:
+            i === 0
+              ? (trail.start?.name ?? trail.title)
+              : i === path.length - 1
+                ? (trail.end?.name ?? "종료 지점")
+                : `경유 ${i}`,
+          lat: p.lat,
+          lng: p.lng,
+        }))
+      : undefined);
 
   return {
     id: trail.id,
@@ -121,6 +150,7 @@ export function trailToCourseCandidate(
       lng: endPos.lng,
     },
     path,
+    waypoints,
     distanceKm: trail.distanceKm,
     durationMin: trail.durationMin,
     description: [

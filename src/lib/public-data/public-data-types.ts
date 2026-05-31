@@ -33,6 +33,8 @@ export type NormalizedWalkCandidate = {
     position?: LatLng;
   };
   path?: LatLng[];
+  /** 경로정보(coursInfo) 경유지 — 지도 마커용 */
+  pathWaypoints?: { name: string; position: LatLng }[];
   distanceKm?: number;
   durationMin?: number;
   description?: string;
