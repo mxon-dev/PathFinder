@@ -24,7 +24,9 @@
 
 스타일은 **Tailwind CSS**를 사용합니다. 전역 진입은 `src/styles/globals.css`의 `@import "tailwindcss";`이며, 컴포넌트에서는 유틸리티 클래스로 스타일을 적용합니다.
 
-**Gemini:** API 키는 **반드시 `.env.local`**에 넣어야 합니다. (`.env.example`만 수정하면 Next가 키를 읽지 않습니다.) `GEMINI_API_KEY` 또는 Google 샘플과 동일한 `GOOGLE_API_KEY`를 사용할 수 있습니다. 변경 후 `pnpm dev`를 다시 시작하세요. 모델 오류 시 `.env.example` 주석대로 `GEMINI_MODEL`을 `gemini-2.0-flash` 등으로 바꿔 보세요. 클라이언트는 `/api/ai-docent`만 호출합니다.
+**Gemini:** API 키는 **반드시 `.env.local`**에 넣어야 합니다. (`.env.example`만 수정하면 Next가 키를 읽지 않습니다.) `GEMINI_API_KEY` 또는 `GOOGLE_API_KEY`를 사용할 수 있습니다. 변경 후 `pnpm dev`를 다시 시작하세요. 모델 오류 시 `GEMINI_MODEL`을 `gemini-2.0-flash` 등으로 바꿔 보세요. 에이전트 챗(`/api/assistant-chat`)과 도슨트(`/api/ai-docent`)가 서버에서 Gemini를 호출합니다.
+
+**공공데이터(채팅·추천 연동):** `.env.local`에 `PUBLIC_DATA_SERVICE_KEY`를 넣으면 추천·채팅에 공공 오픈API를 사용합니다. [전국길관광정보표준데이터](https://www.data.go.kr/data/15017321/standard.do) openapi(기본 `https://api.data.go.kr/openapi/tn_pubr_public_stret_tursm_info_api`, **별도 활용신청** 필요)로 길 후보를 가져오고, 시작·종료 주소를 **Kakao 주소 검색**(`KAKAO_REST_API_KEY`)으로 좌표 보강한 뒤 지도에 **출발(빨강)→도착(파랑) 직선**으로 표시합니다. **공원** 칩 선택 시 도시공원 API도 함께 사용합니다.
 
 ## 3. 시스템 아키텍처
 

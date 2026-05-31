@@ -2,9 +2,13 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { Content } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import type {
+  AssistantChatLocationContext,
   AssistantChatMessageDTO,
   AssistantChatResponse,
+  AssistantDurationSelection,
+  AssistantPlaceSelection,
 } from "@/features/assistant-chat/model/types";
+import { buildPublicDataAugmentationBlock } from "@/lib/public-data/build-public-data-augmentation";
 
 export const runtime = "nodejs";
 
@@ -14,10 +18,19 @@ const MAX_CONTENT = 6000;
 const SYSTEM_INSTRUCTION = [
   "You are PathFinder (패스파인더), a concise Korean-language assistant for urban walking (산책) and light hiking.",
   "Help users choose duration, place types (river, park, mountain, downtown, lake), mood, and safety tips.",
-  "Do not invent precise map coordinates or guarantee specific routes; suggest realistic next steps (e.g. check local parks, use map apps).",
+  "Do not invent precise map coordinates or guarantee specific routes.",
   "Keep replies friendly and practical. Prefer under ~500 Korean characters unless the user asks for more detail.",
-  "If the user writes in Korean, reply in Korean.",
+  "Reply in Korean.",
 ].join(" ");
+
+const AUGMENTED_INSTRUCTION = [
+  "아래 [공공데이터] 블록이 함께 주어집니다.",
+  "사용자의 산책 요청에 답할 때는 반드시 그 목록에 있는 항목(이름·주소·거리 등)을 2~4개 골라 근거로 인용하세요.",
+  "목록에 없는 새 장소를 지어내지 마세요. 거리·위치는 목록의 값만 사용하고, 추정·과장을 피하세요.",
+  "‘지도 앱에서 검색해 보세요’ 같은 일반 안내로 끝내지 말고, 목록 항목 이름을 명시적으로 제시하세요.",
+  "응답 형식: ① 한 줄 추천 요약 → ② 후보 2~4개를 짧은 불릿으로 → ③ 마지막에 ‘실제 시설·운영시간은 직접 확인’ 한 줄.",
+  "목록이 비어 있거나 안내문만 있으면, 데이터 부족을 짧게 알리고 사용자에게 위치·취향을 더 묻는 질문 한 줄로 마무리하세요.",
+].join("\n");
 
 function errorMessage(err: unknown): string | undefined {
   if (err instanceof Error && err.message.trim()) {
@@ -50,6 +63,100 @@ function parseMessages(body: unknown): AssistantChatMessageDTO[] | null {
   return out;
 }
 
+function parseLocation(
+  body: unknown,
+): AssistantChatLocationContext | undefined | null {
+  if (!body || typeof body !== "object") return undefined;
+  const raw = (body as Record<string, unknown>).location;
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== "object") return null;
+
+  const rec = raw as Record<string, unknown>;
+  const mode = rec.mode;
+  const lat = rec.lat;
+  const lng = rec.lng;
+
+  if (mode !== "current" && mode !== "selected") return null;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const location: AssistantChatLocationContext = {
+    mode,
+    lat,
+    lng,
+  };
+
+  if (typeof rec.name === "string" && rec.name.trim()) {
+    location.name = rec.name.trim().slice(0, 120);
+  }
+  if (typeof rec.address === "string" && rec.address.trim()) {
+    location.address = rec.address.trim().slice(0, 200);
+  }
+  if (typeof rec.placeUrl === "string" && rec.placeUrl.trim()) {
+    location.placeUrl = rec.placeUrl.trim().slice(0, 300);
+  }
+
+  return location;
+}
+
+const ALLOWED_PLACE_IDS = new Set<string>([
+  "river",
+  "park",
+  "mountain",
+  "urban",
+  "lake",
+]);
+
+const ALLOWED_DURATION_IDS = new Set<string>(["15", "30", "45", "60", "90"]);
+
+function parseSelectionPlaces(
+  body: unknown,
+): AssistantPlaceSelection[] | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const raw = (body as Record<string, unknown>).selectionPlaces;
+  if (!Array.isArray(raw)) return undefined;
+  const out = raw.filter(
+    (x): x is AssistantPlaceSelection =>
+      typeof x === "string" && ALLOWED_PLACE_IDS.has(x),
+  );
+  return out.length ? Array.from(new Set(out)) : undefined;
+}
+
+function parseSelectionDuration(
+  body: unknown,
+): AssistantDurationSelection | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const raw = (body as Record<string, unknown>).selectionDuration;
+  if (typeof raw !== "string") return undefined;
+  return ALLOWED_DURATION_IDS.has(raw)
+    ? (raw as AssistantDurationSelection)
+    : undefined;
+}
+
+function buildLocationPrompt(location?: AssistantChatLocationContext) {
+  if (!location) return "";
+  const label =
+    location.name ??
+    location.address ??
+    (location.mode === "current" ? "사용자의 현재 위치" : "사용자가 선택한 위치");
+  const address = location.address ? `주소: ${location.address}` : "";
+  const source =
+    location.mode === "current"
+      ? "브라우저 현재 위치 기반"
+      : "사용자가 카카오 장소 검색으로 선택한 위치";
+
+  return [
+    "[위치 컨텍스트]",
+    `추천 기준: ${label}`,
+    `출처: ${source}`,
+    address,
+    `좌표: lat=${location.lat}, lng=${location.lng}`,
+    "이 위치를 산책 코스 추천의 기준점으로 삼되, 정확한 경로 좌표를 임의로 만들지 마세요.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export async function POST(req: Request) {
   const apiKey = (
     process.env.GEMINI_API_KEY ??
@@ -80,11 +187,55 @@ export async function POST(req: Request) {
   if (!messages) {
     return NextResponse.json(
       {
-        error: "Invalid request: expected messages[] alternating user/assistant, ending with user.",
+        error:
+          "Invalid request: expected messages[] alternating user/assistant, ending with user.",
       },
       { status: 400 },
     );
   }
+
+  const location = parseLocation(json);
+  if (location === null) {
+    return NextResponse.json(
+      { error: "Invalid request: location must include mode, lat, and lng." },
+      { status: 400 },
+    );
+  }
+
+  const lastUserText =
+    messages[messages.length - 1]?.role === "user"
+      ? messages[messages.length - 1].content
+      : "";
+  const selectionPlaces = parseSelectionPlaces(json);
+  const selectionDuration = parseSelectionDuration(json);
+
+  const referencePoint = location
+    ? {
+        lat: location.lat,
+        lng: location.lng,
+        label: location.name ?? location.address ?? "사용자 위치",
+      }
+    : undefined;
+
+  const publicAugmentation = process.env.PUBLIC_DATA_SERVICE_KEY?.trim()
+    ? await buildPublicDataAugmentationBlock(lastUserText, selectionPlaces)
+    : "";
+
+  const combinedAugmentation = publicAugmentation.trim();
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log(
+      "[assistant-chat] selectionPlaces=%o duration=%s location=%o augLen=%d",
+      selectionPlaces,
+      selectionDuration ?? "(none)",
+      location ? { lat: location.lat, lng: location.lng } : "(none)",
+      combinedAugmentation.length,
+    );
+  }
+
+  const effectiveSystemInstruction = combinedAugmentation
+    ? `${SYSTEM_INSTRUCTION}\n\n${AUGMENTED_INSTRUCTION}\n\n---\n${combinedAugmentation}`
+    : SYSTEM_INSTRUCTION;
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const primaryModel = modelName;
@@ -97,6 +248,15 @@ export async function POST(req: Request) {
     parts: [{ text: m.content }],
   }));
 
+  const locationPrompt = buildLocationPrompt(location);
+  if (locationPrompt) {
+    const userText = messages[messages.length - 1].content;
+    contents[contents.length - 1] = {
+      role: "user",
+      parts: [{ text: `${locationPrompt}\n\n[사용자 요청]\n${userText}` }],
+    };
+  }
+
   const maxAttemptsPerModel = 3;
   const modelsToTry =
     fallbackModel && fallbackModel !== primaryModel
@@ -108,7 +268,7 @@ export async function POST(req: Request) {
   for (const activeModel of modelsToTry) {
     const model = genAI.getGenerativeModel({
       model: activeModel,
-      systemInstruction: SYSTEM_INSTRUCTION,
+      systemInstruction: effectiveSystemInstruction,
     });
 
     for (let attempt = 1; attempt <= maxAttemptsPerModel; attempt++) {
